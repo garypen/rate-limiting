@@ -1,0 +1,20 @@
+[package]
+name = "rate-limiting-lib"
+version.workspace = true
+edition.workspace = true
+description = "strategy driven rate limiting library"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme = "README.md"
+keywords = ["rate", "limiting", "strategy"]
+categories = ["concurrency", "algorithms"]
+
+[dependencies]
+
+[dev-dependencies]
+futures.workspace = true
+more-asserts = "0.2.2"
+tokio.workspace = true

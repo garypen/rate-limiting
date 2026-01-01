@@ -1,0 +1,24 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "rate-limiting-lib",
+    "tower-rate-limiting"
+]
+
+[workspace.package]
+version = "0.1.0"
+authors = [
+  "garypen <garypen@gmail.com>",
+]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/garypen/rate-limiting"
+homepage = "https://github.com/garypen/rate-limiting"
+documentation = "https://github.com/garypen/rate-limiting#readme"
+edition = "2024"
+
+[workspace.dependencies]
+futures = "0.3.31"
+tokio = { version = "1.48.0", features = [ "full", "test-util" ] }
+tower = { version = "0.5.2", features = ["full"] }
+tower-test = "0.4.0"
