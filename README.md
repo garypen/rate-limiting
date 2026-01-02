@@ -4,9 +4,9 @@ A high-performance, atomic-based rate limiting ecosystem for Rust services.
 
 ## The Ecosystem
 
-This project is a workspace consisting of two specialized crates designed to work in tandem:
+This project is a workspace consisting of two crates designed to work in tandem:
 
-1.  **`shot-limit`**: The engine. Provides lock-free, atomic-based rate limiting strategies (Token Bucket, Fixed Window, Sliding Window). Optimized for $O(1)$ performance and zero thread contention.
+1.  **`shot-limit`**: The engine. Provides lock-free, atomic-based rate limiting strategies (Fixed Window, Sliding Window, Token Bucket). Optimized for $O(1)$ performance and zero thread contention.
 2.  **`tower-shot`**: The armor. A `tower` middleware layer that wraps the core strategies with **Managed Resilience**, adding Load Shedding and Latency SLAs (Timeouts).
 
 ## Why Choose Shot?
