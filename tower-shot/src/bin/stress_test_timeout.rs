@@ -17,8 +17,8 @@ use tower_shot::RateLimitLayer;
 use tower_shot::ShotError;
 
 async fn mock_db_call(_req: ()) -> Result<&'static str, tower::BoxError> {
-    // Simulate real-world work (10ms of DB latency)
-    sleep(Duration::from_millis(10)).await;
+    // Simulate real-world work (100ms of DB latency) and force timeouts
+    sleep(Duration::from_millis(100)).await;
     Ok("success")
 }
 
@@ -110,15 +110,17 @@ where
     }
     println!();
 }
+
 #[tokio::main]
 async fn main() {
     let limit = 1_000;
     let period = Duration::from_secs(1);
-    let total_reqs = 5_000;
+    let total_reqs = 500;
+    let max_wait = Duration::from_millis(50);
 
     // 1.a. Managed Fixed Window Stress
     let fixed = Arc::new(FixedWindow::new(NonZeroUsize::new(limit).unwrap(), period));
-    let fixed_svc = ManagedRateLimitLayer::new(fixed, period).layer(service_fn(mock_db_call));
+    let fixed_svc = ManagedRateLimitLayer::new(fixed, max_wait).layer(service_fn(mock_db_call));
     run_load_test("Managed Fixed Window", fixed_svc, total_reqs).await;
 
     // 1.b. Raw Fixed Window Stress
@@ -131,7 +133,7 @@ async fn main() {
         NonZeroUsize::new(limit).unwrap(),
         period,
     ));
-    let sliding_svc = ManagedRateLimitLayer::new(sliding, period).layer(service_fn(mock_db_call));
+    let sliding_svc = ManagedRateLimitLayer::new(sliding, max_wait).layer(service_fn(mock_db_call));
     run_load_test("Managed Sliding Window", sliding_svc, total_reqs).await;
 
     // 2.b. Raw Sliding Window Stress
@@ -149,7 +151,7 @@ async fn main() {
         limit,
         period,
     ));
-    let bucket_svc = ManagedRateLimitLayer::new(bucket, period).layer(service_fn(mock_db_call));
+    let bucket_svc = ManagedRateLimitLayer::new(bucket, max_wait).layer(service_fn(mock_db_call));
     run_load_test("Managed Token Bucket", bucket_svc, total_reqs).await;
 
     // 3.b. Token Bucket Stress

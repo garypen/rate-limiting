@@ -5,7 +5,7 @@ use tower::Layer;
 
 use crate::service::RateLimitService;
 
-/// Applies GraphQL processing to requests via the supplied inner service.
+/// Applies Rate Limit to requests.
 #[derive(Clone, Debug)]
 pub struct RateLimitLayer<L> {
     limiter: Arc<L>,

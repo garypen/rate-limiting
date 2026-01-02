@@ -1,107 +1,66 @@
-# Shot RateLimit 🦀
+# Shot ✨
 
-A high-performance, atomic-first rate limiting library for the Tower/Axum ecosystem. 
+A high-performance, atomic-based rate limiting ecosystem for Rust services. 
 
-Most rate limiters force excess traffic into high-latency queues. **Shot** is designed for high-concurrency services where the goal is to protect the system and maintain microsecond responsiveness, even under a "Thundering Herd" attack.
+## The Ecosystem
 
-## 🏗️ The Core Philosophy: Fail-Fast vs. Wait-in-Line
+This project is a workspace consisting of two specialized crates designed to work in tandem:
 
-Choosing a rate-limiting strategy is a trade-off between **Goodput** and **Responsiveness**.
+1.  **`shot-limit`**: The engine. Provides lock-free, atomic-based rate limiting strategies (Token Bucket, Fixed Window, Sliding Window). Optimized for $O(1)$ performance and zero thread contention.
+2.  **`tower-shot`**: The armor. A `tower` middleware layer that wraps the core strategies with **Managed Resilience**, adding Load Shedding and Latency SLAs (Timeouts).
 
+## Why Choose Shot?
 
+Traditional rate limiters often focus only on "allowing" or "denying" requests, ignoring the impact of queuing and downstream latency. **Shot** is built on a "Shed-First" philosophy:
 
-### 1. The "Fail-Fast" Stack (`tower-shot` Managed)
-Prioritizes the experience of users who *can* be served immediately. Excess traffic is rejected instantly.
-* **Mechanism:** Coordinates `LoadShed` and `Timeout` with `shot-limit` atomic synchronization.
-* **Outcome:** **Ultra-Low Latency**. 5,000 requests hitting a 1,000 req/s limit are resolved in **~13ms**.
-* **Best For:** Public APIs, interactive microservices, and "Tier 1" infrastructure.
+* **Zero-Trust Latency**: Prevents "Buffer Bloat" by rejecting excess traffic in nanoseconds.
+* **Predictable P99s**: Integrated timeouts ensure that if a request can't be handled within your SLA, it's failed quickly to save system resources.
+* **Atomic Precision**: By using atomics instead of `Mutex` locks, the system scales linearly with your CPU core count.
 
-### 2. The "Wait-in-Line" Stack (`tower-shot` Buffered)
-Prioritizes processing every request, regardless of wait time.
-* **Mechanism:** Excess requests are queued in an internal MPSC buffer.
-* **Outcome:** **100% Success Rate**, but **High Latency**. 5,000 requests hitting a 1,000 req/s limit take **~5 seconds** to clear.
-* **Best For:** Background workers, database migrations, and non-interactive syncs.
+### Performance at a Glance (Apple M1)
 
+| Metric | Result |
+| :--- | :--- |
+| **Throughput** | >300M operations / second |
+| **Contention Overhead** | ~3.3ns per check (8 threads) |
+| **P99 Protection** | 12ms under 5x burst load (Managed) |
 ---
 
-## 📊 Performance Benchmarks: The "Thundering Herd"
+## Workspace Layout
 
-We simulated **5,000 concurrent requests** hitting a service limited to **1,000 req/s**. 
-
-| Strategy | Mode | Success Rate | P99 (Success) | Total Test Time | Behavior |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Shot Sliding** | **Managed** | 20% | **11.5ms** | **13.3ms** | **Fail-Fast (Responsive)** |
-| **Shot Fixed** | **Managed** | 20% | 12.0ms | 12.6ms | Fast Burst Shedding |
-| **Shot Sliding** | **Buffered** | 100% | 4964ms | 5.01s | Precise Queueing |
-| **Shot Fixed** | **Buffered** | 100% | 4024ms | 4.03s | Simple Queueing |
-| **Tower Baseline**| **Buffered** | 100% | 4014ms | 4.02s | Standard Queueing |
-
----
-
-## 🚀 Quick Start (Axum)
-
-The `ManagedRateLimitLayer` is the "Batteries-Included" stack from `tower-shot`. It is **Bufferless** and **Lock-free**, providing a `Clone` service without the overhead of background worker tasks.
-
-```rust
-use std::num::NonZeroUsize;
-use std::time::Duration;
-use axum::{routing::get, Router};
-use tower_shot::ManagedRateLimitLayer;
-use shot_limit::SlidingWindow;
-
-#[tokio::main]
-async fn main() {
-    // 1. Define a precise strategy from shot-limit
-    let strategy = SlidingWindow::new(
-        NonZeroUsize::new(1000).unwrap(), 
-        Duration::from_secs(1)
-    );
-
-    // 2. Build the Managed Layer (Shedding + Timeout) from tower-shot
-    // No background workers or MPSC channels are spawned.
-    let rate_limit_layer = ManagedRateLimitLayer::new(
-        strategy,
-        Duration::from_millis(500) // Max wait time before failing fast
-    );
-
-    let app = Router::new()
-        .route("/", get(|| async { "Hello, World!" }))
-        .layer(rate_limit_layer);
-
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-    axum::serve(listener, app).await.unwrap();
-}
-
+```text
+.
+├── shot-limit/   # Core atomic strategies (Zero-dependency)
+└── tower-shot/   # Tower middleware & Managed layers
 ```
 
-## 🔬 Key Architectural Features
+## Getting Started
 
-### 1. Lock-Free Synchronization
-Unlike traditional rate limiters that wrap internal state in a `Mutex`, **Shot** utilizes **Lock-free Atomics**. Multiple threads can check and update the limit simultaneously using atomic instructions (like `compare_exchange`). This prevents kernel-level context switches, avoids thread parking, and eliminates "Lock Contention" in high-concurrency environments.
+To use the full managed stack in an Axum project, add `tower-shot` to your dependencies and configure a managed layer:
 
+```rust
+use tower_shot::ManagedRateLimitLayer;
+use shot_limit::TokenBucket;
+use std::sync::Arc;
+use std::time::Duration;
+use std::num::NonZeroUsize;
 
+// 1. Define your strategy (from shot-limit)
+let limit = NonZeroUsize::new(1000).unwrap();
+let period = Duration::from_secs(1);
+let strategy = Arc::new(TokenBucket::new(limit, 1000, period));
 
-### 2. Bufferless "Shot" Architecture
-Most Tower layers require `tower::buffer::Buffer` to satisfy `Clone` bounds, which spawns a background worker and an MPSC channel. `tower-shot` avoids this overhead entirely. By using internal `Arc` state and manual `Clone` implementations, the layer remains cloneable and thread-safe while staying "naked" on the executor.
+// 2. Define your Latency SLA (Max wait time)
+let max_wait = Duration::from_millis(500);
 
+// 3. Create the Managed Layer for your Axum Router
+let layer = ManagedRateLimitLayer::new(strategy, max_wait);
+```
 
+## Performance & Scaling
 
-### 3. Reactor-Aware Self-Waking
-When used in **Buffered** mode, the service doesn't just "sleep." It calculates the exact nanosecond wait time required and registers a `tokio::time::sleep` future only when the strategy allows. This ensures the CPU remains idle until the exact moment the limit window opens, minimizing wake-up jitter.
+Because the underlying `shot-limit` strategies are lock-free, this workspace is designed to scale linearly with your hardware. Whether you are running on a single-core edge function or a 128-core bare-metal server, **Shot** ensures that rate limiting is never the bottleneck in your stack.
 
----
+## License
 
-## 🕒 Algorithm Selection (`shot-limit`)
-
-| Algorithm | Raw Overhead | Precision | Best Use Case |
-| :--- | :--- | :--- | :--- |
-| **Fixed Window** | **26 ns** | Low | Internal high-throughput tasks; accepts boundary bursts. |
-| **Token Bucket** | **28 ns** | Medium | Interactive APIs; allows initial bursts for page loads. |
-| **Sliding Window** | **45 ns** | **Highest** | Public "Tier 1" APIs; prevents any boundary gaming. |
-
-
-
----
-
-### Implementation Note: Shared State
-All `shot-limit` strategies are designed to be shared. When you `clone()` a Service or Layer in `tower-shot`, they share the underlying atomic state. **You do not need to wrap these in an extra Arc yourself**; the library handles reference counting internally to ensure the limit is enforced globally across all clones.
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT license](LICENSE-MIT) at your option.

@@ -3,44 +3,84 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use shot_limit::Strategy;
-use tower::load_shed::LoadShed;
-use tower::timeout::Timeout;
-use tower::util::BoxCloneService;
-use tower::{BoxError, Layer, Service};
+use tower::BoxError;
+use tower::Layer;
+use tower::Service;
+use tower::util::BoxCloneSyncService;
 
 use crate::RateLimitService;
+use crate::ShotError;
 
+/// A high-performance, non-blocking rate limiting stack.
+///
+/// This layer uses a "Shed-First" architecture. Instead of queuing requests
+/// in memory (which increases latency and risk of OOM), it immediately
+/// rejects excess traffic.
+///
+/// ### Error Responsibilities:
+/// - **LoadShedding (`ShotError::Overloaded`)**: Occurs when the rate limit
+///   is reached. This happens at the `poll_ready` stage and is near-instant.
+/// - **Timeout (`ShotError::Timeout`)**: Occurs if the *inner service* ///   takes too long to respond (e.g., a slow database query).
+///
+/// This separation ensures that rate-limit rejections never suffer from
+/// "buffer bloat" tail latencies.
 pub struct ManagedRateLimitLayer<L, Req> {
     limiter: Arc<L>,
     max_wait: Duration, // Required here for the "Managed" experience
     _phantom: PhantomData<fn(Req)>,
 }
 
+// Note: Deriving Clone causes issues when using the layer with Axum.
+// We'll just implemented it explicitly.
+impl<L, Req> Clone for ManagedRateLimitLayer<L, Req> {
+    fn clone(&self) -> Self {
+        Self {
+            limiter: self.limiter.clone(),
+            max_wait: self.max_wait,
+            _phantom: PhantomData,
+        }
+    }
+}
+
 impl<S, L, Req> Layer<S> for ManagedRateLimitLayer<L, Req>
 where
     L: Strategy + Send + Sync + 'static,
-    S: Service<Req, Error = BoxError> + Clone + Send + 'static,
+    S: Service<Req, Error = BoxError> + Clone + Send + Sync + 'static,
     S::Future: Send + 'static,
     S::Response: 'static,
     Req: Send + 'static,
 {
-    type Service = BoxCloneService<Req, S::Response, BoxError>;
+    type Service = BoxCloneSyncService<Req, S::Response, BoxError>;
 
     fn layer(&self, inner: S) -> Self::Service {
         let rl = RateLimitService::new(inner, self.limiter.clone());
 
-        // The "Batteries-Included" Stack
-        let loadshed = LoadShed::new(rl);
-        let timeout = Timeout::new(loadshed, self.max_wait);
+        // Timeout is outer to ensure a hard deadline on the entire process.
+        let svc = tower::ServiceBuilder::new()
+            .timeout(self.max_wait)
+            .load_shed()
+            .service(rl);
 
-        BoxCloneService::new(timeout)
+        // Map the mixed errors into ShotError
+        let mapped_svc = tower::util::MapErr::new(svc, |err: BoxError| {
+            if err.is::<tower::timeout::error::Elapsed>() {
+                BoxError::from(ShotError::Timeout)
+            } else if err.is::<tower::load_shed::error::Overloaded>() {
+                BoxError::from(ShotError::Overloaded)
+            } else if err.is::<ShotError>() {
+                err
+            } else {
+                // Wrap any other inner service errors
+                Box::from(ShotError::Inner(err.to_string()))
+            }
+        });
+
+        BoxCloneSyncService::new(mapped_svc)
     }
 }
 
 impl<L: Strategy, Req> ManagedRateLimitLayer<L, Req> {
     pub fn new(limiter: Arc<L>, max_wait: Duration) -> Self {
-        // let buffer_size = capacity + (capacity / 4).max(10);
-
         Self {
             limiter,
             max_wait,

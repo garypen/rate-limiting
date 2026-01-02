@@ -1,4 +1,3 @@
-use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,41 +12,13 @@ use tower::ServiceExt;
 use tower::service_fn;
 
 use shot_limit::{FixedWindow, SlidingWindow, TokenBucket};
-use tower_shot::{BufferedRateLimitLayer, ManagedRateLimitLayer, RateLimitLayer};
+use tower_shot::ManagedRateLimitLayer;
+use tower_shot::RateLimitLayer;
 
 // No-op service to isolate middleware overhead
 async fn noop(_req: ()) -> Result<&'static str, tower::BoxError> {
     Ok("ok")
 }
-
-/*
-fn bench_limiters(c: &mut Criterion) {
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let mut group = c.benchmark_group("Rate Limiters");
-
-    // Use a massive limit for overhead benchmarking so we don't trigger the "wait"
-    let limit = 1_000_000;
-    let period = Duration::from_secs(1);
-    let nz_limit = NonZeroUsize::new(limit).unwrap();
-
-    let bucket_strat = Arc::new(TokenBucket::new(nz_limit, limit, period));
-
-    group.bench_function("shot_managed_token_bucket_overhead", |b| {
-        b.to_async(&rt).iter_with_setup(
-            || {
-                let layer = ManagedRateLimitLayer::new(bucket_strat.clone(), period);
-                ServiceBuilder::new().layer(layer).service(service_fn(noop))
-            },
-            |mut svc| async move {
-                // This should now be Ok() every time because capacity is 1M
-                let _ = svc.ready().await.unwrap().call(()).await.unwrap();
-            },
-        );
-    });
-
-    group.finish();
-}
-*/
 
 fn bench_limiters(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -103,24 +74,33 @@ fn bench_limiters(c: &mut Criterion) {
         );
     });
 
-    // --- BUFFERED BENCHMARKS ---
-    // Buffered layers queue requests, so we expect Ok("ok") results.
+    // --- RAW STRATEGY COMPARISONS ---
 
-    group.bench_function("shot_buffered_token_bucket", |b| {
+    group.bench_function("shot_raw_fixed_window", |b| {
         b.to_async(&rt).iter_with_setup(
             || {
-                let layer = BufferedRateLimitLayer::new(bucket_strat.clone(), limit);
+                let layer = RateLimitLayer::new(fixed_strat.clone());
                 ServiceBuilder::new().layer(layer).service(service_fn(noop))
             },
             |mut svc| async move {
-                svc.ready().await.unwrap().call(()).await.unwrap();
+                let _ = svc.ready().await.unwrap().call(()).await;
             },
         );
     });
 
-    // --- RAW STRATEGY COMPARISONS ---
+    group.bench_function("shot_raw_sliding_window", |b| {
+        b.to_async(&rt).iter_with_setup(
+            || {
+                let layer = RateLimitLayer::new(sliding_strat.clone());
+                ServiceBuilder::new().layer(layer).service(service_fn(noop))
+            },
+            |mut svc| async move {
+                let _ = svc.ready().await.unwrap().call(()).await;
+            },
+        );
+    });
 
-    group.bench_function("token_bucket_raw_layer", |b| {
+    group.bench_function("shot_raw_token_bucket", |b| {
         let base_svc = RateLimitLayer::new(bucket_strat.clone()).layer(service_fn(noop));
         b.to_async(&rt).iter_with_setup(
             || base_svc.clone(),
