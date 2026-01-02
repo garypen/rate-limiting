@@ -1,0 +1,29 @@
+name: Performance Benchmarks
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  benchmark:
+    name: Run Load Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run Stress Tests
+        # We run with --release to get accurate atomic performance
+        # We use --nocapture to see your custom print statements in the logs
+        run: cargo run --release --example stress_test -- --nocapture
+
+      - name: Run Micro-benchmarks
+        # If you use Criterion.rs for the "Naked Logic" benchmarks
+        run: cargo bench

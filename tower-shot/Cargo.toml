@@ -1,5 +1,5 @@
 [package]
-name = "tower-rate-limiting"
+name = "tower-shot"
 version.workspace = true
 authors.workspace = true
 license.workspace = true
@@ -9,10 +9,16 @@ documentation.workspace = true
 edition.workspace = true
 
 [dependencies]
-rate-limiting-lib = { version = "0.1.0", path = "../rate-limiting-lib" }
+hdrhistogram = "7.5.4"
+shot-limit = { version = "0.1.0", path = "../shot-limit" }
 tokio.workspace = true
 tower.workspace = true
 
 [dev-dependencies]
+criterion = { version = "0.5", features = ["async_tokio"] }
 futures.workspace = true
 tokio = { version = "1.48.0", features = [ "test-util" ] }
+
+[[bench]]
+name = "limiters"
+harness = false

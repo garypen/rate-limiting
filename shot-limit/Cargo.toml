@@ -1,5 +1,5 @@
 [package]
-name = "rate-limiting-lib"
+name = "shot-limit"
 version.workspace = true
 edition.workspace = true
 description = "strategy driven rate limiting library"

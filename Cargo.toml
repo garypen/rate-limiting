@@ -2,8 +2,8 @@
 resolver = "2"
 
 members = [
-    "rate-limiting-lib",
-    "tower-rate-limiting"
+    "shot-limit",
+    "tower-shot"
 ]
 
 [workspace.package]

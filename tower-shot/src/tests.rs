@@ -8,11 +8,11 @@ use std::task::Context;
 use std::task::Poll;
 use std::time::Duration;
 
-use rate_limiting_lib::FixedWindow;
-use rate_limiting_lib::Reason;
-use rate_limiting_lib::SlidingWindow;
-use rate_limiting_lib::Strategy;
-use rate_limiting_lib::TokenBucket;
+use shot_limit::FixedWindow;
+use shot_limit::Reason;
+use shot_limit::SlidingWindow;
+use shot_limit::Strategy;
+use shot_limit::TokenBucket;
 use tower::BoxError;
 use tower::Layer;
 use tower::Service;
@@ -115,15 +115,9 @@ macro_rules! test_limiter_service {
 
 // --- Applying the Macro to your 3 Strategies ---
 
-test_limiter_service!(
-    fixed_window_tests,
-    FixedWindow,
-    |cap, int| FixedWindow::new(cap, int)
-);
+test_limiter_service!(fixed_window_tests, FixedWindow, FixedWindow::new);
 
-test_limiter_service!(sliding_window_tests, SlidingWindow, |cap, int| {
-    SlidingWindow::new(cap, int)
-});
+test_limiter_service!(sliding_window_tests, SlidingWindow, SlidingWindow::new);
 
 test_limiter_service!(
     token_bucket_tests,
@@ -136,7 +130,7 @@ async fn test_layer_integration() {
     let limiter = SlidingWindow::new(NonZeroUsize::new(100).unwrap(), Duration::from_secs(1));
 
     let mut service = tower::ServiceBuilder::new()
-        .layer(RateLimitLayer::new(limiter))
+        .layer(RateLimitLayer::new(Arc::new(limiter)))
         .service(MockService {
             count: Arc::new(AtomicUsize::new(0)),
         });
@@ -148,7 +142,7 @@ async fn test_layer_integration() {
 #[tokio::test]
 async fn test_shared_state_across_clones() {
     let rl = FixedWindow::new(NonZeroUsize::new(1).unwrap(), Duration::from_secs(10));
-    let layer = RateLimitLayer::new(rl);
+    let layer = RateLimitLayer::new(Arc::new(rl));
 
     let mut svc1 = layer.layer(MockService {
         count: Arc::new(AtomicUsize::new(0)),
@@ -257,7 +251,7 @@ async fn test_managed_layer_cloning_concurrency() {
     );
 
     // Create the Managed Layer (Wait up to 100ms before failing)
-    let layer = ManagedRateLimitLayer::new(limiter, capacity, Duration::from_millis(100));
+    let layer = ManagedRateLimitLayer::new(Arc::new(limiter), Duration::from_millis(100));
 
     let mock_count = Arc::new(AtomicUsize::new(0));
     let service = ServiceBuilder::new().layer(layer).service(MockService {
@@ -308,7 +302,7 @@ async fn test_buffered_layer_cloning_concurrency() {
     );
 
     // Create the Buffered Layer (Wait up to 100ms before failing)
-    let layer = BufferedRateLimitLayer::new(limiter, capacity);
+    let layer = BufferedRateLimitLayer::new(Arc::new(limiter), capacity);
 
     let mock_count = Arc::new(AtomicUsize::new(0));
     let service = ServiceBuilder::new()

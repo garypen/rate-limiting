@@ -10,8 +10,8 @@ use tokio::time::sleep;
 use tower::BoxError;
 use tower::Service;
 
-use rate_limiting_lib::Reason;
-use rate_limiting_lib::Strategy;
+use shot_limit::Reason;
+use shot_limit::Strategy;
 
 pub struct RateLimitService<L, S> {
     inner: S,
@@ -20,7 +20,10 @@ pub struct RateLimitService<L, S> {
 }
 
 // Manually implement Clone because Pin<Box<Sleep>> cannot be cloned
-impl<L, S: Clone> Clone for RateLimitService<L, S> {
+impl<L, S> Clone for RateLimitService<L, S>
+where
+    S: Clone,
+{
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use rate_limiting_lib::Strategy;
+use shot_limit::Strategy;
 use tower::Layer;
 
 use crate::service::RateLimitService;
@@ -16,10 +16,8 @@ where
     L: Strategy + Send + Sync + 'static,
 {
     /// Create a RateLimitLayer
-    pub fn new(limiter: L) -> Self {
-        RateLimitLayer {
-            limiter: Arc::new(limiter),
-        }
+    pub fn new(limiter: Arc<L>) -> Self {
+        RateLimitLayer { limiter }
     }
 }
 

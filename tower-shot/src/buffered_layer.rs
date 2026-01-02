@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use rate_limiting_lib::Strategy;
+use shot_limit::Strategy;
 use tower::BoxError;
 use tower::Layer;
 use tower::Service;
@@ -45,11 +45,11 @@ where
 }
 
 impl<L: Strategy, Req> BufferedRateLimitLayer<L, Req> {
-    pub fn new(limiter: L, capacity: usize) -> Self {
+    pub fn new(limiter: Arc<L>, capacity: usize) -> Self {
         let buffer_size = capacity + (capacity / 4).max(10);
 
         Self {
-            limiter: Arc::new(limiter),
+            limiter,
             buffer_size,
             _phantom: PhantomData,
         }

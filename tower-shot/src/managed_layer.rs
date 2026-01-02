@@ -2,8 +2,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 use std::time::Duration;
 
-use rate_limiting_lib::Strategy;
-use tower::buffer::Buffer;
+use shot_limit::Strategy;
 use tower::load_shed::LoadShed;
 use tower::timeout::Timeout;
 use tower::util::BoxCloneService;
@@ -13,7 +12,6 @@ use crate::RateLimitService;
 
 pub struct ManagedRateLimitLayer<L, Req> {
     limiter: Arc<L>,
-    buffer_size: usize,
     max_wait: Duration, // Required here for the "Managed" experience
     _phantom: PhantomData<fn(Req)>,
 }
@@ -21,7 +19,7 @@ pub struct ManagedRateLimitLayer<L, Req> {
 impl<S, L, Req> Layer<S> for ManagedRateLimitLayer<L, Req>
 where
     L: Strategy + Send + Sync + 'static,
-    S: Service<Req, Error = BoxError> + Send + 'static,
+    S: Service<Req, Error = BoxError> + Clone + Send + 'static,
     S::Future: Send + 'static,
     S::Response: 'static,
     Req: Send + 'static,
@@ -32,8 +30,7 @@ where
         let rl = RateLimitService::new(inner, self.limiter.clone());
 
         // The "Batteries-Included" Stack
-        let buffered = Buffer::new(rl, self.buffer_size);
-        let loadshed = LoadShed::new(buffered);
+        let loadshed = LoadShed::new(rl);
         let timeout = Timeout::new(loadshed, self.max_wait);
 
         BoxCloneService::new(timeout)
@@ -41,12 +38,11 @@ where
 }
 
 impl<L: Strategy, Req> ManagedRateLimitLayer<L, Req> {
-    pub fn new(limiter: L, capacity: usize, max_wait: Duration) -> Self {
-        let buffer_size = capacity + (capacity / 4).max(10);
+    pub fn new(limiter: Arc<L>, max_wait: Duration) -> Self {
+        // let buffer_size = capacity + (capacity / 4).max(10);
 
         Self {
-            limiter: Arc::new(limiter),
-            buffer_size,
+            limiter,
             max_wait,
             _phantom: PhantomData,
         }
