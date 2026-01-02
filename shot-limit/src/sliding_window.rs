@@ -9,6 +9,11 @@ use std::time::Instant;
 use super::Reason;
 use super::Strategy;
 
+/// A weighted sliding window limiter.
+///
+/// Calculates a weighted average of the current and previous windows to
+/// provide a smoother enforcement than `FixedWindow` with minimal
+/// computational overhead.
 #[derive(Debug)]
 pub struct SlidingWindow {
     capacity: usize,
@@ -70,6 +75,12 @@ impl Strategy for SlidingWindow {
 }
 
 impl SlidingWindow {
+    /// Creates a new `SlidingWindow` strategy.
+    ///
+    /// # Arguments
+    ///
+    /// * `capacity` - The maximum number of requests allowed per sliding window period.
+    /// * `interval` - The period used to calculate the weighted moving average between windows.
     pub fn new(capacity: NonZeroUsize, interval: Duration) -> Self {
         let interval = interval.as_nanos() as u64;
         Self {

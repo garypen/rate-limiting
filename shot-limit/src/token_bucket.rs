@@ -9,6 +9,11 @@ use std::time::Instant;
 use super::Reason;
 use super::Strategy;
 
+/// A classic Token Bucket algorithm.
+///
+/// It maintains a "bucket" of tokens that is replenished over time.
+/// This allows for bursts of traffic up to the bucket's capacity while
+/// maintaining a steady average rate.
 #[derive(Debug)]
 pub struct TokenBucket {
     capacity: usize,
@@ -35,6 +40,16 @@ impl Strategy for TokenBucket {
 }
 
 impl TokenBucket {
+    /// Creates a new `TokenBucket` strategy.
+    ///
+    /// This strategy allows for bursts up to `capacity`. The bucket is replenished
+    /// by adding `increment` tokens every `interval`.
+    ///
+    /// # Arguments
+    ///
+    /// * `capacity` - The maximum number of tokens the bucket can hold.
+    /// * `increment` - How many tokens are added to the bucket per interval.
+    /// * `interval` - The duration of time between increments.
     pub fn new(capacity: NonZeroUsize, increment: usize, interval: Duration) -> Self {
         Self {
             capacity: capacity.get(),
@@ -67,26 +82,6 @@ impl TokenBucket {
                     None // No update needed
                 }
             });
-
-        /*
-        let elapsed = now - self.last;
-
-        // Calculate how many intervals have fully passed
-        let intervals_passed = elapsed.as_nanos() / self.interval.as_nanos();
-        let added = (intervals_passed as usize) * self.increment;
-
-        if added > 0 {
-            let new = usize::min(
-                self.capacity,
-                self.remaining.load(Ordering::Relaxed) + added,
-            );
-            self.remaining.store(new, Ordering::Relaxed);
-
-            // Only move 'last' forward by the duration of the consumed intervals
-            // This keeps the "remainder" time for the next call!
-            self.last += self.interval * (intervals_passed as u32);
-        }
-        */
     }
 }
 

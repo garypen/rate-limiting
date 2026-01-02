@@ -9,6 +9,11 @@ use std::time::Instant;
 use super::Reason;
 use super::Strategy;
 
+/// A simple window-based limiter.
+///
+/// Divides time into fixed intervals. It is the most performant strategy
+/// but can be susceptible to "boundary bursts" where double the limit is
+/// allowed in a short period spanning two windows.
 #[derive(Debug)]
 pub struct FixedWindow {
     capacity: usize,
@@ -50,6 +55,12 @@ impl Strategy for FixedWindow {
 }
 
 impl FixedWindow {
+    /// Creates a new `FixedWindow` strategy.
+    ///
+    /// # Arguments
+    ///
+    /// * `capacity` - The maximum number of requests allowed within a single window.
+    /// * `interval` - The duration of the fixed time window.
     pub fn new(capacity: NonZeroUsize, interval: Duration) -> Self {
         Self {
             capacity: capacity.get(),

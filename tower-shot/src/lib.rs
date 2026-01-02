@@ -10,15 +10,15 @@
 //!
 //! 1. **Load Shedding**: Immediately rejects requests with `ShotError::Overloaded`
 //!    if the service is at peak capacity, preventing memory exhaustion.
-//! 2. **Timeouts**: Queues requests until the provided [`Strategy`] allows them,
+//! 2. **Timeouts**: Queues requests until the provided [`shot_limit::Strategy`] allows them,
 //!    failing with `ShotError::Timeout` if the wait exceeds a defined duration.
 //! 3. **Error Mapping**: Automatically converts internal Tower errors (like
-//!    `tower::timeout::Elapsed`) into a unified, cloneable [`ShotError`] domain.
+//!    `tower::timeout::error::Elapsed`) into a unified, cloneable [`ShotError`] domain.
 //!
 //! ## Feature Flags
-//! - `axum`: Enables [`axum::response::IntoResponse`] for [`ShotError`], allowing
-//!   automatic conversion to HTTP status codes (408, 503, 500).
-//! - `metrics`: (Optional) Records counters for rejected requests.
+//!
+//! - `axum`: Enables `IntoResponse` for [`ShotError`], allowing automatic conversion
+//!   to HTTP status codes (408, 503, 500).
 
 mod error;
 mod layer;
@@ -28,6 +28,10 @@ mod service;
 #[cfg(test)]
 mod tests;
 
+#[cfg(doc)]
+use shot_limit::Strategy;
+
+// ... your code ...
 pub use error::ShotError;
 pub use layer::RateLimitLayer;
 pub use managed_layer::ManagedRateLimitLayer;

@@ -4,14 +4,15 @@ use std::time::Duration;
 use criterion::Criterion;
 use criterion::criterion_group;
 use criterion::criterion_main;
-use shot_limit::Strategy;
 use tower::Layer;
 use tower::Service;
 use tower::ServiceBuilder;
 use tower::ServiceExt;
 use tower::service_fn;
 
-use shot_limit::{FixedWindow, SlidingWindow, TokenBucket};
+use shot_limit::FixedWindow;
+use shot_limit::SlidingWindow;
+use shot_limit::TokenBucket;
 use tower_shot::ManagedRateLimitLayer;
 use tower_shot::RateLimitLayer;
 
@@ -113,31 +114,5 @@ fn bench_limiters(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_strategies(c: &mut Criterion) {
-    let mut group = c.benchmark_group("Raw Strategies (Sync)");
-
-    let limit = 10_000;
-    let period = Duration::from_secs(1);
-    let nz_limit = limit.try_into().unwrap();
-
-    let fixed = FixedWindow::new(nz_limit, period);
-    let sliding = SlidingWindow::new(nz_limit, period);
-    let bucket = TokenBucket::new(nz_limit, 1000, period);
-
-    group.bench_function("fixed_window_atomic_only", |b| {
-        b.iter(|| fixed.process());
-    });
-
-    group.bench_function("sliding_window_atomic_only", |b| {
-        b.iter(|| sliding.process());
-    });
-
-    group.bench_function("token_bucket_atomic_only", |b| {
-        b.iter(|| bucket.process());
-    });
-
-    group.finish();
-}
-
-criterion_group!(benches, bench_limiters, bench_strategies);
+criterion_group!(benches, bench_limiters);
 criterion_main!(benches);

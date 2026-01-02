@@ -6,7 +6,8 @@ use tower::Service;
 use tower::ServiceExt;
 
 use shot_limit::TokenBucket;
-use tower_shot::{ManagedRateLimitLayer, ShotError};
+use tower_shot::ManagedRateLimitLayer;
+use tower_shot::ShotError;
 
 #[tokio::main]
 async fn main() {

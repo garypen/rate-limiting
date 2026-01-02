@@ -28,9 +28,14 @@ Under a burst of 5,000 concurrent requests with a 1,000-request capacity:
 Tower Shot is designed to plug directly into Axum's type system with zero-boilerplate error handling.
 
 ```rust
-use tower_shot::{ManagedRateLimitLayer, strategy::TokenBucket};
-use std::{sync::Arc, time::Duration, num::NonZeroUsize};
-use axum::{Router, routing::get};
+use std::sync::Arc;
+use std::time::Duration;
+use std::num::NonZeroUsize;
+
+use axum::Router;
+use axum::routing::get;
+use shot_limit::TokenBucket};
+use tower_shot::ManagedRateLimitLayer;
 
 #[tokio::main]
 async fn main() {

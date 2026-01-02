@@ -1,13 +1,17 @@
-use axum::{
-    Router, error_handling::HandleErrorLayer, extract::Request, http::StatusCode,
-    response::IntoResponse, routing::get,
-};
-use shot_limit::TokenBucket;
 use std::sync::Arc;
 use std::time::Duration;
+
+use axum::Router;
+use axum::error_handling::HandleErrorLayer;
+use axum::extract::Request;
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
+use axum::routing::get;
+use shot_limit::TokenBucket;
 use tower::BoxError;
 use tower::ServiceBuilder;
-use tower_shot::{ManagedRateLimitLayer, ShotError};
+use tower_shot::ManagedRateLimitLayer;
+use tower_shot::ShotError;
 
 #[tokio::main]
 async fn main() {
