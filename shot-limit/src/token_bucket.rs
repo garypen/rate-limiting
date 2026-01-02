@@ -50,13 +50,13 @@ impl TokenBucket {
     /// * `capacity` - The maximum number of tokens the bucket can hold.
     /// * `increment` - How many tokens are added to the bucket per interval.
     /// * `interval` - The duration of time between increments.
-    pub fn new(capacity: NonZeroUsize, increment: usize, interval: Duration) -> Self {
+    pub fn new(capacity: NonZeroUsize, increment: NonZeroUsize, interval: Duration) -> Self {
         Self {
             capacity: capacity.get(),
             remaining: AtomicUsize::new(capacity.get()),
             interval,
             last: AtomicU64::new(0),
-            increment,
+            increment: increment.get(),
             anchor: Instant::now(),
         }
     }
@@ -94,7 +94,7 @@ mod tests {
         let capacity = 2; // Small capacity for easy testing
         let rl = TokenBucket::new(
             NonZeroUsize::new(capacity).unwrap(),
-            1,
+            NonZeroUsize::new(1).unwrap(),
             Duration::from_millis(100),
         );
 
@@ -118,7 +118,7 @@ mod tests {
         // 1 token every 100ms
         let rl = TokenBucket::new(
             NonZeroUsize::new(10).unwrap(),
-            1,
+            NonZeroUsize::new(1).unwrap(),
             Duration::from_millis(100),
         );
 
@@ -146,7 +146,7 @@ mod tests {
 
         let rl = TokenBucket::new(
             NonZeroUsize::new(10).unwrap(),
-            1,
+            NonZeroUsize::new(1).unwrap(),
             Duration::from_millis(100),
         );
 

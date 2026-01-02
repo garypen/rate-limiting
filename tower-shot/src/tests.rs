@@ -122,7 +122,7 @@ test_limiter_service!(sliding_window_tests, SlidingWindow, SlidingWindow::new);
 test_limiter_service!(
     token_bucket_tests,
     TokenBucket,
-    |cap, int| TokenBucket::new(cap, 1, int)
+    |cap, int| TokenBucket::new(cap, NonZeroUsize::new(1).unwrap(), int)
 );
 
 #[tokio::test]

@@ -25,7 +25,7 @@
 //!
 //! let limit = NonZeroUsize::new(100).unwrap();
 //! let period = Duration::from_secs(60);
-//! let bucket = TokenBucket::new(limit, 100, period);
+//! let bucket = TokenBucket::new(limit, limit, period);
 //!
 //! if bucket.process().is_continue() {
 //!     // Request allowed

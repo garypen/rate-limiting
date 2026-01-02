@@ -104,7 +104,7 @@ fn bench_all_scenarios(c: &mut Criterion) {
     // not the time spent sleeping.
     let bucket = Arc::new(TokenBucket::new(
         NonZeroUsize::new(100_000_000).unwrap(), // Huge capacity
-        100_000,
+        NonZeroUsize::new(100_000).unwrap(),
         period,
     ));
     // let bucket = Arc::new(TokenBucket::new(limit, 100, period));

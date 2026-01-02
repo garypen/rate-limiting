@@ -147,7 +147,7 @@ async fn main() {
     // (Assuming TokenBucket::new(capacity, refill_rate_per_sec))
     let bucket = Arc::new(TokenBucket::new(
         NonZeroUsize::new(limit).unwrap(),
-        limit,
+        NonZeroUsize::new(limit).unwrap(),
         period,
     ));
     let bucket_svc = ManagedRateLimitLayer::new(bucket, period).layer(service_fn(mock_db_call));
@@ -157,7 +157,7 @@ async fn main() {
     // (Assuming TokenBucket::new(capacity, refill_rate_per_sec))
     let bucket = Arc::new(TokenBucket::new(
         NonZeroUsize::new(limit).unwrap(),
-        limit,
+        NonZeroUsize::new(limit).unwrap(),
         period,
     ));
     let bucket_svc = RateLimitLayer::new(bucket).layer(service_fn(mock_db_call));

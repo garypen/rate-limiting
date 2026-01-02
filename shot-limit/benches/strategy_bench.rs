@@ -34,7 +34,7 @@ fn bench_parallel_strategy<S: Strategy + Send + Sync + 'static>(
     let strategy = Arc::new(strategy);
     let mut group = c.benchmark_group(group_name);
 
-    for threads in [1, 4, 8].iter() {
+    for threads in [2, 4, 8].iter() {
         group.bench_with_input(
             BenchmarkId::from_parameter(format!("{}-threads", threads)),
             threads,
@@ -81,7 +81,7 @@ fn run_all_benches(c: &mut Criterion) {
     bench_parallel_strategy("Parallel SlidingWindow", c, sw);
 
     // TokenBucket
-    let tb = Arc::new(TokenBucket::new(limit, 1_000_000, period));
+    let tb = Arc::new(TokenBucket::new(limit, limit, period));
     bench_single_strategy("Baseline TokenBucket", c, Arc::clone(&tb));
     bench_parallel_strategy("Parallel TokenBucket", c, tb);
 }

@@ -47,6 +47,7 @@ use std::num::NonZeroUsize;
 
 // 1. Define your strategy (from shot-limit)
 let limit = NonZeroUsize::new(1000).unwrap();
+let increment = NonZeroUsize::new(1000).unwrap();
 let period = Duration::from_secs(1);
 let strategy = Arc::new(TokenBucket::new(limit, 1000, period));
 
@@ -59,7 +60,7 @@ let layer = ManagedRateLimitLayer::new(strategy, max_wait);
 
 ## Performance & Scaling
 
-Because the underlying `shot-limit` strategies are lock-free, this workspace is designed to scale linearly with your hardware. Whether you are running on a single-core edge function or a 128-core bare-metal server, **Shot** ensures that rate limiting is never the bottleneck in your stack.
+Because the underlying `shot-limit` strategies are lock-free, these crates are designed to scale linearly with your hardware. Whether you are running on a single-core edge function or a 128-core bare-metal server, **Shot** ensures that rate limiting is never the bottleneck in your stack.
 
 ## License
 

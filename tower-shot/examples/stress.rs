@@ -13,7 +13,7 @@ use tower_shot::ShotError;
 async fn main() {
     // 1. Setup Strategy: 100 tokens, refills 10 every 100ms
     let limit = 100.try_into().unwrap();
-    let refill_amount = 10;
+    let refill_amount = 10.try_into().unwrap();
     let interval = Duration::from_millis(100);
     let bucket = Arc::new(TokenBucket::new(limit, refill_amount, interval));
 
