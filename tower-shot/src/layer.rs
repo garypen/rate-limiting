@@ -6,14 +6,28 @@ use tower::Layer;
 use crate::service::RateLimitService;
 
 /// Applies Rate Limit to requests.
-#[derive(Clone, Debug)]
-pub struct RateLimitLayer<L> {
+#[derive(Debug)]
+pub struct RateLimitLayer<L>
+where
+    L: ?Sized,
+{
     limiter: Arc<L>,
+}
+
+impl<L> Clone for RateLimitLayer<L>
+where
+    L: ?Sized,
+{
+    fn clone(&self) -> Self {
+        Self {
+            limiter: Arc::clone(&self.limiter),
+        }
+    }
 }
 
 impl<L> RateLimitLayer<L>
 where
-    L: Strategy + Send + Sync + 'static,
+    L: Strategy + ?Sized + Send + Sync + 'static,
 {
     /// Create a RateLimitLayer
     pub fn new(limiter: Arc<L>) -> Self {
@@ -21,7 +35,10 @@ where
     }
 }
 
-impl<L, S> Layer<S> for RateLimitLayer<L> {
+impl<L, S> Layer<S> for RateLimitLayer<L>
+where
+    L: ?Sized,
+{
     type Service = RateLimitService<L, S>;
 
     fn layer(&self, service: S) -> Self::Service {

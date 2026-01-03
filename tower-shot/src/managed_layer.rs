@@ -24,7 +24,10 @@ use crate::ShotError;
 ///
 /// This separation ensures that rate-limit rejections never suffer from
 /// "buffer bloat" tail latencies.
-pub struct ManagedRateLimitLayer<L, Req> {
+pub struct ManagedRateLimitLayer<L, Req>
+where
+    L: ?Sized,
+{
     limiter: Arc<L>,
     max_wait: Duration, // Required here for the "Managed" experience
     _phantom: PhantomData<fn(Req)>,
@@ -32,7 +35,10 @@ pub struct ManagedRateLimitLayer<L, Req> {
 
 // Note: Deriving Clone causes issues when using the layer with Axum.
 // We'll just implemented it explicitly.
-impl<L, Req> Clone for ManagedRateLimitLayer<L, Req> {
+impl<L, Req> Clone for ManagedRateLimitLayer<L, Req>
+where
+    L: ?Sized,
+{
     fn clone(&self) -> Self {
         Self {
             limiter: self.limiter.clone(),
@@ -44,7 +50,7 @@ impl<L, Req> Clone for ManagedRateLimitLayer<L, Req> {
 
 impl<S, L, Req> Layer<S> for ManagedRateLimitLayer<L, Req>
 where
-    L: Strategy + Send + Sync + 'static,
+    L: Strategy + ?Sized + Send + Sync + 'static,
     S: Service<Req, Error = BoxError> + Clone + Send + Sync + 'static,
     S::Future: Send + 'static,
     S::Response: 'static,
@@ -79,7 +85,10 @@ where
     }
 }
 
-impl<L: Strategy, Req> ManagedRateLimitLayer<L, Req> {
+impl<L, Req> ManagedRateLimitLayer<L, Req>
+where
+    L: Strategy + ?Sized,
+{
     pub fn new(limiter: Arc<L>, max_wait: Duration) -> Self {
         Self {
             limiter,

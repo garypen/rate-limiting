@@ -4,7 +4,7 @@ A high-performance, atomic-backed rate limiting middleware for `tower` and `axum
 
 ## Why Tower Shot?
 
-Standard rate limiters often lead to **Bufferbloat**. When a burst hits, requests queue up in deep buffers, leading to multi-second tail latencies even for "successful" requests. 
+Standard rate limiters often lead to **Buffer bloat**. When a burst hits, requests queue up in deep buffers, leading to multi-second tail latencies even for "successful" requests. 
 
 `tower-shot` uses a **Managed Architecture** that pairs atomic rate-limiting strategies with aggressive Load Shedding and Timeout SLAs. 
 
@@ -64,7 +64,7 @@ async fn main() {
 - **Axum Integration**: Native `IntoResponse` implementation for `ShotError`.
   - `408 Request Timeout`: Returned when your Latency SLA is exceeded.
   - `503 Service Unavailable`: Returned when the rate limit is hit (Load Shedding).
-- **Zero Bufferbloat**: Non-blocking approach that rejects traffic at `poll_ready` rather than queueing indefinitely.
+- **Zero Buffer bloat**: Non-blocking approach that rejects traffic at `poll_ready` rather than queueing indefinitely.
 
 
 

@@ -39,13 +39,10 @@ let period = Duration::from_secs(60);
 // Initialize a Token Bucket with 100 tokens, refilling every minute
 let bucket = TokenBucket::new(limit, 100, period);
 
-match bucket.process() {
-    Ok(_) => {
-        // Request allowed
-    }
-    Err(_) => {
-        // Rate limit exceeded
-    }
+if bucket.process().is_continue() {
+    // Request allowed
+} else {
+    // Rate limit exceeded
 }
 ```
 

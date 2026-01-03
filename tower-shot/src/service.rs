@@ -13,7 +13,10 @@ use tower::Service;
 use shot_limit::Reason;
 use shot_limit::Strategy;
 
-pub struct RateLimitService<L, S> {
+pub struct RateLimitService<L, S>
+where
+    L: ?Sized,
+{
     inner: S,
     limiter: Arc<L>,
     sleep: Option<Pin<Box<Sleep>>>,
@@ -22,6 +25,7 @@ pub struct RateLimitService<L, S> {
 // Manually implement Clone because Pin<Box<Sleep>> cannot be cloned
 impl<L, S> Clone for RateLimitService<L, S>
 where
+    L: ?Sized,
     S: Clone,
 {
     fn clone(&self) -> Self {
@@ -36,7 +40,7 @@ where
 
 impl<L, S, Req> Service<Req> for RateLimitService<L, S>
 where
-    L: Strategy + Send + Sync + 'static,
+    L: Strategy + ?Sized + Send + Sync + 'static,
     S: Service<Req, Error = BoxError>,
     Req: Send + 'static,
 {
@@ -83,7 +87,10 @@ where
     }
 }
 
-impl<L, S> RateLimitService<L, S> {
+impl<L, S> RateLimitService<L, S>
+where
+    L: ?Sized,
+{
     pub fn new(inner: S, limiter: Arc<L>) -> Self {
         Self {
             inner,
