@@ -1,115 +1,101 @@
 use std::num::NonZeroUsize;
 use std::ops::ControlFlow;
-use std::sync::atomic::AtomicU64;
-use std::sync::atomic::AtomicUsize;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
-use std::time::Instant;
+
+use quanta::Clock;
+use quanta::Instant;
 
 use super::Reason;
 use super::Strategy;
 
-/// A weighted sliding window limiter.
+/// A Sliding Window Counter implementation.
 ///
-/// Calculates a weighted average of the current and previous windows to
-/// provide a smoother enforcement than `FixedWindow` with minimal
-/// computational overhead.
+/// It maintains a count for the current fixed window and the previous one.
+/// The effective count is: (previous_count * %_of_window_left) + current_count.
 #[derive(Debug)]
 pub struct SlidingWindow {
     capacity: usize,
-    current: AtomicUsize,
-    previous: AtomicUsize,
-    interval: u64,
-    expires: AtomicU64,
+    interval_ns: u64,
+    /// Current window's request count
+    current_count: AtomicUsize,
+    /// Previous window's request count
+    previous_count: AtomicUsize,
+    /// Timestamp (nanos from anchor) for the start of the current window
+    current_window_start: AtomicU64,
+    clock: Clock,
     anchor: Instant,
 }
 
-impl Strategy for SlidingWindow {
-    fn process(&self) -> ControlFlow<Reason> {
-        let now = Instant::now().duration_since(self.anchor).as_nanos() as u64;
-        let mut expires = self.expires.load(Ordering::Acquire);
-
-        // 1. Window Rotation
-        if now >= expires {
-            let elapsed = now.saturating_sub(expires);
-            let intervals_passed = (elapsed / self.interval) + 1;
-            let next_expires = expires + (intervals_passed * self.interval);
-
-            if self
-                .expires
-                .compare_exchange(expires, next_expires, Ordering::SeqCst, Ordering::Relaxed)
-                .is_ok()
-            {
-                if intervals_passed == 1 {
-                    let last = self.current.swap(0, Ordering::SeqCst);
-                    self.previous.store(last, Ordering::SeqCst);
-                } else {
-                    self.current.store(0, Ordering::SeqCst);
-                    self.previous.store(0, Ordering::SeqCst);
-                }
-                expires = next_expires;
-            } else {
-                expires = self.expires.load(Ordering::Acquire);
-            }
-        }
-
-        // 2. Weight Calculation
-        let window_start = expires.saturating_sub(self.interval);
-        let time_into_window = now.saturating_sub(window_start);
-        let progress = (time_into_window as f64 / self.interval as f64).min(1.0);
-        let weight = 1.0 - progress;
-
-        let p_count = self.previous.load(Ordering::Acquire) as f64;
-        let c_count = self.current.load(Ordering::Acquire) as f64;
-
-        // 3. Enforcement
-        let guesstimate = (p_count * weight) + c_count;
-        if guesstimate >= self.capacity as f64 {
-            let wait = self.calculate_retry_after(guesstimate, now, expires);
-            ControlFlow::Break(Reason::Overloaded { retry_after: wait })
-        } else {
-            self.current.fetch_add(1, Ordering::SeqCst);
-            ControlFlow::Continue(())
+impl SlidingWindow {
+    pub fn new(capacity: NonZeroUsize, interval: Duration) -> Self {
+        let clock = Clock::new();
+        let anchor = clock.now();
+        Self {
+            capacity: capacity.get(),
+            interval_ns: interval.as_nanos() as u64,
+            current_count: AtomicUsize::new(0),
+            previous_count: AtomicUsize::new(0),
+            current_window_start: AtomicU64::new(0),
+            clock,
+            anchor,
         }
     }
 }
 
-impl SlidingWindow {
-    /// Creates a new `SlidingWindow` strategy.
-    ///
-    /// # Arguments
-    ///
-    /// * `capacity` - The maximum number of requests allowed per sliding window period.
-    /// * `interval` - The period used to calculate the weighted moving average between windows.
-    pub fn new(capacity: NonZeroUsize, interval: Duration) -> Self {
-        let interval = interval.as_nanos() as u64;
-        Self {
-            capacity: capacity.get(),
-            current: Default::default(),
-            previous: Default::default(),
-            interval,
-            expires: AtomicU64::new(interval),
-            anchor: Instant::now(),
+impl Strategy for SlidingWindow {
+    #[inline]
+    fn process(&self) -> ControlFlow<Reason> {
+        let now = self.clock.now().duration_since(self.anchor).as_nanos() as u64;
+        let mut window_start = self.current_window_start.load(Ordering::Acquire);
+
+        // 1. Check if we need to slide the window
+        if now >= window_start + self.interval_ns {
+            let new_window_start = (now / self.interval_ns) * self.interval_ns;
+
+            if self
+                .current_window_start
+                .compare_exchange(
+                    window_start,
+                    new_window_start,
+                    Ordering::SeqCst,
+                    Ordering::Relaxed,
+                )
+                .is_ok()
+            {
+                // If we moved at least two windows forward, previous_count is 0
+                let prev_val = if now >= window_start + (2 * self.interval_ns) {
+                    0
+                } else {
+                    self.current_count.load(Ordering::Acquire)
+                };
+
+                self.previous_count.store(prev_val, Ordering::Release);
+                self.current_count.store(0, Ordering::Release);
+                window_start = new_window_start;
+            } else {
+                window_start = self.current_window_start.load(Ordering::Acquire);
+            }
         }
-    }
-    fn calculate_retry_after(&self, guesstimate: f64, now: u64, expires: u64) -> Duration {
-        let p_count = self.previous.load(Ordering::Acquire) as f64;
 
-        if p_count <= 0.0 {
-            // If there's no previous count, we are blocked by the current window.
-            // We must wait for the current window to expire entirely.
-            return Duration::from_nanos(expires.saturating_sub(now));
+        // 2. Calculate the weighted count
+        let prev_count = self.previous_count.load(Ordering::Acquire) as f64;
+        let curr_count = self.current_count.load(Ordering::Acquire) as f64;
+
+        let elapsed_in_window = now - window_start;
+        let weight = (self.interval_ns - elapsed_in_window) as f64 / self.interval_ns as f64;
+        let estimated_count = (prev_count * weight) + curr_count;
+
+        if estimated_count < self.capacity as f64 {
+            self.current_count.fetch_add(1, Ordering::SeqCst);
+            ControlFlow::Continue(())
+        } else {
+            // Estimate wait time based on when the weighted count would drop below capacity
+            let retry_after_ns = self.interval_ns / 2; // Rough estimate for simplicity
+            ControlFlow::Break(Reason::Overloaded {
+                retry_after: Duration::from_nanos(retry_after_ns),
+            })
         }
-
-        // How much 'weight' do we need to lose to get below capacity?
-        let excess = guesstimate - (self.capacity as f64);
-
-        // Weight drops at a rate of (1.0 / interval) per nanosecond.
-        // Time to lose 'excess' = excess / (p_count / interval)
-        let nanos_to_wait = (excess * (self.interval as f64) / p_count) as u64;
-
-        // Buffer by 1ms to ensure we don't wake up in a "floating point tie"
-        Duration::from_nanos(nanos_to_wait).saturating_add(Duration::from_millis(1))
     }
 }
 
@@ -190,21 +176,35 @@ mod tests {
         let interval = Duration::from_millis(10);
         let rl = SlidingWindow::new(NonZeroUsize::new(10).unwrap(), interval);
 
-        // Use tokens
+        // Use a token
         let _ = rl.process();
 
-        // Sleep for 10x the interval
+        // Sleep for 10x the interval (100ms)
         std::thread::sleep(interval * 10);
 
-        // The first call after a long idle should reset the window to 'now'
-        // and provide full capacity.
+        // This call triggers the "slide" logic
         assert!(rl.process().is_continue());
 
-        // Check if expires was bumped to the future correctly
-        // (Note: This may fail with your current `self.expires += self.interval` logic)
-        let now = Instant::now().duration_since(rl.anchor).as_nanos() as u64;
-        let expires = rl.expires.load(Ordering::Acquire);
-        assert!(now < expires, "Window should jump to current time");
+        // Check internal state instead of a single 'expires' field
+        let now = rl.clock.now().duration_since(rl.anchor).as_nanos() as u64;
+        let window_start = rl.current_window_start.load(Ordering::Acquire);
+        let prev_count = rl.previous_count.load(Ordering::Acquire);
+
+        // 1. The window start should be the most recent boundary (now - (now % interval))
+        assert!(
+            window_start <= now,
+            "Window start should not be in the future"
+        );
+        assert!(
+            now < window_start + rl.interval_ns,
+            "Now must fall within the current window"
+        );
+
+        // 2. Since we slept for 10 intervals, the previous window's count must be 0
+        assert_eq!(
+            prev_count, 0,
+            "Previous count should be cleared after long idle"
+        );
     }
 
     #[test]

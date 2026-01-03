@@ -1,10 +1,11 @@
 use std::num::NonZeroUsize;
 use std::ops::ControlFlow;
 use std::sync::atomic::AtomicU64;
-use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
-use std::time::Instant;
+
+use quanta::Clock;
+use quanta::Instant;
 
 use super::Reason;
 use super::Strategy;
@@ -16,72 +17,85 @@ use super::Strategy;
 /// maintaining a steady average rate.
 #[derive(Debug)]
 pub struct TokenBucket {
-    capacity: usize,
-    remaining: AtomicUsize,
-    interval: Duration,
-    last: AtomicU64,
-    increment: usize,
+    capacity_units: u64,
+    /// Number of units (tokens * 10^9) added per nanosecond.
+    refill_rate_units_per_ns: u64,
+    /// Current units in bucket (scaled by 10^9).
+    units: AtomicU64,
+    last_update_ns: AtomicU64,
+    clock: Clock,
     anchor: Instant,
 }
 
-impl Strategy for TokenBucket {
-    fn process(&self) -> ControlFlow<Reason> {
-        self.refill();
-        if self.remaining.load(Ordering::Relaxed) == 0 {
-            let wait = self.interval.as_nanos() as u64 / self.increment as u64;
-            ControlFlow::Break(Reason::Overloaded {
-                retry_after: Duration::from_nanos(wait),
-            })
-        } else {
-            self.remaining.fetch_sub(1, Ordering::Relaxed);
-            ControlFlow::Continue(())
+impl TokenBucket {
+    const UNITS_SCALE: u64 = 1_000_000_000;
+
+    /// Creates a new `TokenBucket`.
+    ///
+    /// # Arguments
+    /// * `capacity` - Max tokens the bucket can hold (burst size).
+    /// * `increment` - Tokens added during the period (steady-state rate).
+    /// * `period` - The duration over which `increment` is added.
+    pub fn new(capacity: NonZeroUsize, increment: NonZeroUsize, period: Duration) -> Self {
+        let clock = Clock::new();
+        let anchor = clock.now();
+
+        // Calculate rate: (Increment Tokens * 10^9) / Period in Nanos
+        let refill_rate = (increment.get() as u64 * Self::UNITS_SCALE) / period.as_nanos() as u64;
+
+        Self {
+            capacity_units: capacity.get() as u64 * Self::UNITS_SCALE,
+            refill_rate_units_per_ns: refill_rate,
+            // Start with a full bucket
+            units: AtomicU64::new(capacity.get() as u64 * Self::UNITS_SCALE),
+            last_update_ns: AtomicU64::new(0),
+            clock,
+            anchor,
         }
     }
 }
 
-impl TokenBucket {
-    /// Creates a new `TokenBucket` strategy.
-    ///
-    /// This strategy allows for bursts up to `capacity`. The bucket is replenished
-    /// by adding `increment` tokens every `interval`.
-    ///
-    /// # Arguments
-    ///
-    /// * `capacity` - The maximum number of tokens the bucket can hold.
-    /// * `increment` - How many tokens are added to the bucket per interval.
-    /// * `interval` - The duration of time between increments.
-    pub fn new(capacity: NonZeroUsize, increment: NonZeroUsize, interval: Duration) -> Self {
-        Self {
-            capacity: capacity.get(),
-            remaining: AtomicUsize::new(capacity.get()),
-            interval,
-            last: AtomicU64::new(0),
-            increment: increment.get(),
-            anchor: Instant::now(),
-        }
-    }
+impl Strategy for TokenBucket {
+    #[inline]
+    fn process(&self) -> ControlFlow<Reason> {
+        let now = self.clock.now().duration_since(self.anchor).as_nanos() as u64;
+        let unit_cost = 1_000_000_000u64; // Cost of 1 token
 
-    fn refill(&self) {
-        let now = Instant::now().duration_since(self.anchor).as_nanos() as u64;
-        // Use fetch_update to prevent race conditions. Ignore the result.
-        let _ = self
-            .last
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |last| {
-                let elapsed = now.saturating_sub(last);
-                let intervals_passed = elapsed / self.interval.as_nanos() as u64;
+        loop {
+            let last_update = self.last_update_ns.load(Ordering::Acquire);
+            let current_units = self.units.load(Ordering::Acquire);
 
-                if intervals_passed > 0 {
-                    let added = (intervals_passed as usize) * self.increment;
-                    let current = self.remaining.load(Ordering::Acquire);
-                    self.remaining
-                        .store((current + added).min(self.capacity), Ordering::Release);
+            // 1. Calculate how many nanotokens have accumulated since last call
+            let elapsed = now.saturating_sub(last_update);
+            let refill = elapsed * self.refill_rate_units_per_ns;
+            let new_units = std::cmp::min(self.capacity_units, current_units + refill);
 
-                    // Advance the clock by the exact intervals consumed
-                    Some(last + (intervals_passed * self.interval.as_nanos() as u64))
+            // 2. Check if we have at least 1 full token (10^9 units)
+            if new_units < unit_cost {
+                let missing_units = unit_cost - new_units;
+                // Time until 1 token is available: Missing / Rate
+                let wait_ns = if self.refill_rate_units_per_ns > 0 {
+                    missing_units / self.refill_rate_units_per_ns
                 } else {
-                    None // No update needed
-                }
-            });
+                    u64::MAX // If rate is 0, never available
+                };
+
+                return ControlFlow::Break(Reason::Overloaded {
+                    retry_after: Duration::from_nanos(wait_ns),
+                });
+            }
+
+            // 3. Atomically update state
+            if self
+                .last_update_ns
+                .compare_exchange_weak(last_update, now, Ordering::SeqCst, Ordering::Relaxed)
+                .is_ok()
+            {
+                self.units.store(new_units - unit_cost, Ordering::Release);
+                return ControlFlow::Continue(());
+            }
+            // If CAS fails, another thread updated time; loop and recalculate.
+        }
     }
 }
 

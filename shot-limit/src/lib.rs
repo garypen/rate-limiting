@@ -37,10 +37,12 @@ use std::ops::ControlFlow;
 use std::time::Duration;
 
 mod fixed_window;
+mod gcra;
 mod sliding_window;
 mod token_bucket;
 
 pub use fixed_window::FixedWindow;
+pub use gcra::Gcra;
 pub use sliding_window::SlidingWindow;
 pub use token_bucket::TokenBucket;
 

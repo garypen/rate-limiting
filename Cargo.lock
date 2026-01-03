@@ -1165,7 +1165,9 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "futures",
+ "governor",
  "more-asserts",
+ "quanta",
  "tokio",
 ]
 

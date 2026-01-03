@@ -4,63 +4,24 @@ A high-performance, atomic-based rate limiting ecosystem for Rust services.
 
 ## The Ecosystem
 
-This project is a workspace consisting of two crates designed to work in tandem:
+This project is split into two specialized crates:
 
-1.  **`shot-limit`**: The engine. Provides lock-free, atomic-based rate limiting strategies (Fixed Window, Sliding Window, Token Bucket). Optimized for $O(1)$ performance and zero thread contention.
-2.  **`tower-shot`**: The armor. A `tower` middleware layer that wraps the core strategies with **Managed Resilience**, adding Load Shedding and Latency SLAs (Timeouts).
+* **`shot-limit`**: The core engine. It contains the logic for rate-limiting strategies (Token Bucket, Fixed Window, Sliding Window). It is zero-cost, generic, and can be used independently of any networking framework.
+* **`tower-shot`**: The integration layer. It provides `tower::Layer` and `tower::Service` implementations that wrap `shot-limit` strategies, making them easy to use with `axum`, `tonic`, or any other Tower-compatible stack.
 
 ## Why Choose Shot?
 
-Traditional rate limiters often focus only on "allowing" or "denying" requests, ignoring the impact of queuing and downstream latency. **Shot** is built on a "Shed-First" philosophy:
+I was motivated to see if there was a better way to perform Rate Limiting than the existing `tower` implementation. I wanted configurable, by strategy, rate limiting and I wanted to eliminate the use of Buffering.
 
-* **Zero-Trust Latency**: Prevents "Buffer Bloat" by rejecting excess traffic in nanoseconds.
-* **Predictable P99s**: Integrated timeouts ensure that if a request can't be handled within your SLA, it's failed quickly to save system resources.
-* **Atomic Precision**: By using atomics instead of `Mutex` locks, the system scales linearly with your CPU core count.
-
-### Performance at a Glance (Apple M1)
-
-| Metric | Result |
-| :--- | :--- |
-| **Throughput** | >300M operations / second |
-| **Contention Overhead** | ~3.3ns per check (8 threads) |
-| **P99 Protection** | 12ms under 5x burst load (Managed) |
----
-
-## Workspace Layout
-
-```text
-.
-├── shot-limit/   # Core atomic strategies (Zero-dependency)
-└── tower-shot/   # Tower middleware & Managed layers
-```
-
-## Getting Started
-
-To use the full managed stack in an Axum project, add `tower-shot` to your dependencies and configure a managed layer:
-
-```rust
-use tower_shot::ManagedRateLimitLayer;
-use shot_limit::TokenBucket;
-use std::sync::Arc;
-use std::time::Duration;
-use std::num::NonZeroUsize;
-
-// 1. Define your strategy (from shot-limit)
-let limit = NonZeroUsize::new(1000).unwrap();
-let increment = NonZeroUsize::new(1000).unwrap();
-let period = Duration::from_secs(1);
-let strategy = Arc::new(TokenBucket::new(limit, 1000, period));
-
-// 2. Define your Latency SLA (Max wait time)
-let max_wait = Duration::from_millis(500);
-
-// 3. Create the Managed Layer for your Axum Router
-let layer = ManagedRateLimitLayer::new(strategy, max_wait);
-```
+From these core goals, I've ended up with two `tower` Layers:
+ - `ManagedRateLimitLayer` - opinionated and providing timeouts and load shedding. 
+ - `RateLimitLayer` - drop in replacement for the existing `tower` Rate Limit.
 
 ## Performance & Scaling
 
 Because the underlying `shot-limit` strategies are lock-free, these crates are designed to scale linearly with your hardware. Whether you are running on a single-core edge function or a 128-core bare-metal server, **Shot** ensures that rate limiting is never the bottleneck in your stack.
+
+The performance of the various strategies and layers is demonstrated in the included benchmarks. The results are good on my Mac M1 laptop, but I encourage anyone using this to verify the results are good in their environment.
 
 ## License
 

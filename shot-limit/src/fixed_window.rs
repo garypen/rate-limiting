@@ -4,41 +4,58 @@ use std::sync::atomic::AtomicU64;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
-use std::time::Instant;
+
+use quanta::Clock;
+use quanta::Instant;
 
 use super::Reason;
 use super::Strategy;
 
-/// A simple window-based limiter.
+/// A simple window-based limiter using high-performance TSC timing.
 ///
-/// Divides time into fixed intervals. It is the most performant strategy
-/// but can be susceptible to "boundary bursts" where double the limit is
-/// allowed in a short period spanning two windows.
+/// Divides time into fixed intervals. It is highly performant but can be
+/// susceptible to "boundary bursts" where double the limit is allowed
+/// in a short period spanning two windows.
 #[derive(Debug)]
 pub struct FixedWindow {
     capacity: usize,
     remaining: AtomicUsize,
+    /// Absolute nanoseconds (relative to anchor) when the current window expires.
     expires: AtomicU64,
     interval: u64,
+    clock: Clock,
     anchor: Instant,
 }
 
 impl Strategy for FixedWindow {
+    #[inline]
     fn process(&self) -> ControlFlow<Reason> {
-        let now = Instant::now().duration_since(self.anchor).as_nanos() as u64;
-        let expires = self.expires.load(Ordering::Acquire);
+        // High-performance timestamp retrieval
+        let now = self.clock.now().duration_since(self.anchor).as_nanos() as u64;
+        let mut expires = self.expires.load(Ordering::Acquire);
 
+        // Check if the current window has expired
         if now > expires {
-            let next_expires = now + self.interval;
+            // Calculate the start of the current window to avoid drift
+            // during long idle periods.
+            let window_count = now / self.interval;
+            let next_expires = (window_count + 1) * self.interval;
+
             if self
                 .expires
                 .compare_exchange(expires, next_expires, Ordering::SeqCst, Ordering::Relaxed)
                 .is_ok()
             {
+                // Reset the bucket for the new window
                 self.remaining.store(self.capacity, Ordering::Release);
+                expires = next_expires;
+            } else {
+                // If we lost the race, reload the expires value set by the winner
+                expires = self.expires.load(Ordering::Acquire);
             }
         }
 
+        // Atomic decrement of tokens
         let old_remaining =
             self.remaining
                 .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |val| {
@@ -48,7 +65,7 @@ impl Strategy for FixedWindow {
         match old_remaining {
             Ok(_) => ControlFlow::Continue(()),
             Err(_) => ControlFlow::Break(Reason::Overloaded {
-                retry_after: Duration::from_nanos(expires - now),
+                retry_after: Duration::from_nanos(expires.saturating_sub(now)),
             }),
         }
     }
@@ -62,12 +79,17 @@ impl FixedWindow {
     /// * `capacity` - The maximum number of requests allowed within a single window.
     /// * `interval` - The duration of the fixed time window.
     pub fn new(capacity: NonZeroUsize, interval: Duration) -> Self {
+        let clock = Clock::new();
+        let anchor = clock.now();
+        let interval_ns = interval.as_nanos() as u64;
+
         Self {
             capacity: capacity.get(),
-            remaining: capacity.get().into(),
-            interval: interval.as_nanos() as u64,
-            expires: AtomicU64::new(interval.as_nanos() as u64),
-            anchor: Instant::now(),
+            remaining: AtomicUsize::new(capacity.get()),
+            interval: interval_ns,
+            expires: AtomicU64::new(interval_ns),
+            clock,
+            anchor,
         }
     }
 }

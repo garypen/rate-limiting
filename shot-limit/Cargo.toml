@@ -13,10 +13,12 @@ keywords = ["rate", "limiting", "strategy"]
 categories = ["concurrency", "algorithms"]
 
 [dependencies]
+quanta = "0.12.6"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 futures.workspace = true
+governor = "0.10.4"
 more-asserts = "0.2.2"
 tokio.workspace = true
 

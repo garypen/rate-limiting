@@ -48,6 +48,7 @@ use axum::routing::get;
 use clap::Parser;
 use clap::ValueEnum;
 use shot_limit::FixedWindow;
+use shot_limit::Gcra;
 use shot_limit::SlidingWindow;
 use shot_limit::Strategy;
 use shot_limit::TokenBucket;
@@ -66,6 +67,7 @@ enum LimiterType {
 #[derive(ValueEnum, Clone, Debug)]
 enum StrategyType {
     Fixed,
+    Gcra,
     Sliding,
     Bucket,
 }
@@ -112,6 +114,7 @@ async fn main() -> Result<(), BoxError> {
     // Ensure the Arc is created as the trait object type immediately
     let strategy: Arc<dyn Strategy + Send + Sync> = match args.strategy {
         StrategyType::Fixed => Arc::new(FixedWindow::new(capacity, args.period)),
+        StrategyType::Gcra => Arc::new(Gcra::new(capacity, args.period)),
         StrategyType::Sliding => Arc::new(SlidingWindow::new(capacity, args.period)),
         StrategyType::Bucket => Arc::new(TokenBucket::new(capacity, increment, args.period)),
     };
@@ -146,7 +149,10 @@ async fn main() -> Result<(), BoxError> {
 
     let listener = tokio::net::TcpListener::bind(args.addr).await?;
 
-    println!("📡 Listening on http://{}", listener.local_addr()?.to_string());
+    println!(
+        "📡 Listening on http://{}", 
+       listener.local_addr()?.to_string())
+    ;
 
     axum::serve(listener, app).await?;
 
