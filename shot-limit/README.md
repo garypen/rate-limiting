@@ -14,12 +14,10 @@ Built for extreme scale on modern hardware. The following benchmarks were record
 
 | Strategy | Single-Threaded | 8-Thread Parallel |
 |:---|:---:|:---:|
-| **Token Bucket** | 5.71 ns | 1.46 ns |
-| **Fixed Window** | 1.88 ns | 0.34 ns |
-| **Sliding Window** | 4.22 ns | 0.62 ns |
-| **GCRA** | 1.99 ns | 0.34 ns |
-
-*Note: The measured performance for **Token Bucket** has regressed compared to previous versions. This is an intentional change to prioritize **correctness** over raw speed by implementing a more precise refill calculation using `u128` arithmetic to prevent premature rounding, especially for low refill rates. The other strategies show performance improvements or are within noise thresholds.*
+| **Token Bucket** | 2.69 ns | 0.56 ns |
+| **Fixed Window** | 1.87 ns | 0.33 ns |
+| **Sliding Window** | 4.22 ns | 0.60 ns |
+| **GCRA** | 2.01 ns | 0.39 ns |
 
 *Note: Total throughput at 8 threads exceeds **3 billion operations per second** for the Fixed Window strategy.*
 

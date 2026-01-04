@@ -167,18 +167,18 @@ The following table shows the raw overhead introduced by the middleware for a si
 
 | Implementation | Latency (ns) | Relative Speed |
 |:---|:---:|:---:|
-| `tower::limit::RateLimit` | 5,658 ns | 1x |
-| `governor` | 140 ns | 40x faster |
-| **`tower-shot` (Standard)** | **103 ns** | **55x faster** |
-| **`tower-shot` (Managed)** | **199 ns** | **28x faster** |
+| `tower::limit::RateLimit` | 6254.6 ns | 1x |
+| `governor` | 141.61 ns | 44x faster |
+| **`tower-shot` (Standard)** | **106.09 ns** | **59x faster** |
+| **`tower-shot` (Managed)** | **214.99 ns** | **29x faster** |
 
 ### High Contention Scaling
 
 When under pressure from **1,000 concurrent tasks** competing for permits, `tower-shot` maintains its lead by minimizing lock contention:
 
-* **`tower-shot` (Standard):** 182 µs
-* **`governor`:** 199 µs
-* **`tower::limit::RateLimit`:** 521 µs
+* **`tower-shot` (Standard):** 180.03 µs
+* **`governor`:** 208.44 µs
+* **`tower::limit::RateLimit`:** 487.48 µs
 
 ### Key Takeaways
 

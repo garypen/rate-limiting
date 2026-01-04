@@ -23,6 +23,22 @@ Because the underlying `shot-limit` strategies are lock-free, these crates are d
 
 The performance of the various strategies and layers is demonstrated in the included benchmarks. The results are good on my Mac M1 laptop, but I encourage anyone using this to verify the results are good in their environment.
 
+## Performance Summary
+
+### `shot-limit` (Core Strategies)
+The core `shot-limit` strategies demonstrate extremely low overhead, with single-threaded operations typically in the low nanoseconds. For instance:
+- **Fixed Window:** ~1.87 ns (single-threaded)
+- **GCRA:** ~2.01 ns (single-threaded)
+
+These strategies scale efficiently, maintaining high performance under multi-threaded loads (e.g., Fixed Window at ~0.33 ns per operation with 8 threads). For full details, see [`shot-limit/README.md`](./shot-limit/README.md).
+
+### `tower-shot` (Middleware)
+`tower-shot` introduces minimal overhead while providing robust rate-limiting middleware.
+- **Standard `tower-shot` Layer:** ~106 ns latency, offering a significant speedup (59x faster) compared to `tower::limit::RateLimit`.
+- **Managed `tower-shot` Layer:** ~215 ns latency, providing advanced features like timeouts and load shedding while remaining highly performant (29x faster than `tower::limit::RateLimit`).
+
+Under high contention (1,000 concurrent tasks), `tower-shot` layers maintain excellent performance, with the Standard layer processing requests in approximately 180 µs. For full details, see [`tower-shot/README.md`](./tower-shot/README.md).
+
 ## License
 
 Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT license](LICENSE-MIT) at your option.
