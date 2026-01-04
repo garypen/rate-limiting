@@ -12,12 +12,14 @@ Core atomic rate-limiting strategies for high-throughput Rust services. This cra
 
 Built for extreme scale on modern hardware. The following benchmarks were recorded on an **Apple M1 (8-core)** using the included `criterion` suite:
 
-| Strategy | Single-Threaded | 8-Thread Parallel (Effective) |
+| Strategy | Single-Threaded | 8-Thread Parallel |
 |:---|:---:|:---:|
-| **Token Bucket** | 2.18 ns | **0.40 ns** |
-| **Fixed Window** | 1.87 ns | **0.33 ns** |
-| **Sliding Window** | 4.22 ns | **0.61 ns** |
-| **GCRA** | 1.92 ns | **0.38 ns** |
+| **Token Bucket** | 5.71 ns | 1.46 ns |
+| **Fixed Window** | 1.88 ns | 0.34 ns |
+| **Sliding Window** | 4.22 ns | 0.62 ns |
+| **GCRA** | 1.99 ns | 0.34 ns |
+
+*Note: The measured performance for **Token Bucket** has regressed compared to previous versions. This is an intentional change to prioritize **correctness** over raw speed by implementing a more precise refill calculation using `u128` arithmetic to prevent premature rounding, especially for low refill rates. The other strategies show performance improvements or are within noise thresholds.*
 
 *Note: Total throughput at 8 threads exceeds **3 billion operations per second** for the Fixed Window strategy.*
 
@@ -67,6 +69,50 @@ Run the benchmark suite to verify performance on your specific architecture. On 
 
 ```bash
 cargo bench
+```
+
+## Python Bindings
+
+This crate also provides Python bindings, allowing you to use the rate-limiting strategies directly in Python applications.
+
+### Setup
+
+To set up the Python environment and run tests:
+
+1.  **Build the Rust project with Python bindings**:
+    ```bash
+    maturin develop --release
+    ```
+    This command will build the Rust code and install the `shot_limit` Python package into your active Python environment.
+
+2.  **Activate the Python virtual environment** (if you're using one, which is recommended):
+    ```bash
+    source .venv/bin/activate
+    ```
+    If you don't have a virtual environment, you can create one using `python -m venv .venv` and then activate it.
+
+3.  **Run the Python tests**:
+    ```bash
+    python test.py
+    ```
+
+### Example Usage (Python)
+
+```python
+import shot_limit
+import time
+
+# TokenBucket Example
+bucket = shot_limit.TokenBucket(capacity=2, increment=1, period_secs=5)
+print(f"TokenBucket Call 1: {'Allowed' if bucket.process() else 'Denied'}")
+time.sleep(6) # Wait for refill
+print(f"TokenBucket Call 2: {'Allowed' if bucket.process() else 'Denied'}")
+
+# FixedWindow Example
+fw = shot_limit.FixedWindow(capacity=2, interval_secs=1)
+print(f"FixedWindow Call 1: {'Allowed' if fw.process() else 'Denied'}")
+print(f"FixedWindow Call 2: {'Allowed' if fw.process() else 'Denied'}") # Allowed
+print(f"FixedWindow Call 3: {'Allowed' if fw.process() else 'Denied'}") # Denied
 ```
 
 ## License

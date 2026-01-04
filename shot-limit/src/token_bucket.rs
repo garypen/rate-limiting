@@ -19,7 +19,7 @@ use super::Strategy;
 pub struct TokenBucket {
     capacity_units: u64,
     /// Number of units (tokens * 10^9) added per nanosecond.
-    refill_rate_units_per_ns: u64,
+    refill_rate_units_per_ns: f64,
     /// Current units in bucket (scaled by 10^9).
     units: AtomicU64,
     last_update_ns: AtomicU64,
@@ -28,7 +28,7 @@ pub struct TokenBucket {
 }
 
 impl TokenBucket {
-    const UNITS_SCALE: u64 = 1_000_000_000;
+    const UNITS_SCALE: u64 = 1_000_000_000; // Cost of 1 token
 
     /// Creates a new `TokenBucket`.
     ///
@@ -40,12 +40,14 @@ impl TokenBucket {
         let clock = Clock::new();
         let anchor = clock.now();
 
-        // Calculate rate: (Increment Tokens * 10^9) / Period in Nanos
-        let refill_rate = (increment.get() as u64 * Self::UNITS_SCALE) / period.as_nanos() as u64;
-
+        let refill_rate_units_per_ns = if period.as_nanos() > 0 {
+            (increment.get() as u64 * Self::UNITS_SCALE) as f64 / period.as_nanos() as f64
+        } else {
+            0f64
+        };
         Self {
             capacity_units: capacity.get() as u64 * Self::UNITS_SCALE,
-            refill_rate_units_per_ns: refill_rate,
+            refill_rate_units_per_ns,
             // Start with a full bucket
             units: AtomicU64::new(capacity.get() as u64 * Self::UNITS_SCALE),
             last_update_ns: AtomicU64::new(0),
@@ -59,25 +61,32 @@ impl Strategy for TokenBucket {
     #[inline]
     fn process(&self) -> ControlFlow<Reason> {
         let now = self.clock.now().duration_since(self.anchor).as_nanos() as u64;
-        let unit_cost = 1_000_000_000u64; // Cost of 1 token
+        let mut spins = 0;
 
         loop {
+            if spins > 10 {
+                std::thread::yield_now();
+            }
+
             let last_update = self.last_update_ns.load(Ordering::Acquire);
             let current_units = self.units.load(Ordering::Acquire);
 
-            // 1. Calculate how many nanotokens have accumulated since last call
+            // 1. Calculate how many units have accumulated since the last call
             let elapsed = now.saturating_sub(last_update);
-            let refill = elapsed * self.refill_rate_units_per_ns;
+
+            let refill = (elapsed as f64 * self.refill_rate_units_per_ns).floor() as u64;
             let new_units = std::cmp::min(self.capacity_units, current_units + refill);
 
             // 2. Check if we have at least 1 full token (10^9 units)
-            if new_units < unit_cost {
-                let missing_units = unit_cost - new_units;
-                // Time until 1 token is available: Missing / Rate
-                let wait_ns = if self.refill_rate_units_per_ns > 0 {
-                    missing_units / self.refill_rate_units_per_ns
+            if new_units < Self::UNITS_SCALE {
+                let missing_units = Self::UNITS_SCALE - new_units;
+                // Time until 1 token is available
+                let wait_ns = if self.refill_rate_units_per_ns > 0f64 {
+                    (missing_units as f64 / self.refill_rate_units_per_ns).ceil() as u64
                 } else {
-                    u64::MAX // If rate is 0, never available
+                    // You will never get any more tokens, if there are no refills.
+                    // There's no "good" answer here, so let's make it a second
+                    Self::UNITS_SCALE
                 };
 
                 return ControlFlow::Break(Reason::Overloaded {
@@ -91,10 +100,12 @@ impl Strategy for TokenBucket {
                 .compare_exchange_weak(last_update, now, Ordering::SeqCst, Ordering::Relaxed)
                 .is_ok()
             {
-                self.units.store(new_units - unit_cost, Ordering::Release);
+                self.units
+                    .store(new_units - Self::UNITS_SCALE, Ordering::Release);
                 return ControlFlow::Continue(());
             }
             // If CAS fails, another thread updated time; loop and recalculate.
+            spins += 1;
         }
     }
 }

@@ -16,6 +16,7 @@ use governor::RateLimiter;
 use http::Request;
 use http::Response;
 use shot_limit::FixedWindow;
+use shot_limit::Gcra;
 use shot_limit::SlidingWindow;
 use shot_limit::TokenBucket;
 use tower::BoxError;
@@ -107,9 +108,9 @@ fn bench_all_scenarios(c: &mut Criterion) {
         NonZeroUsize::new(100_000).unwrap(),
         period,
     ));
-    // let bucket = Arc::new(TokenBucket::new(limit, 100, period));
     let fixed = Arc::new(FixedWindow::new(limit, period));
     let sliding = Arc::new(SlidingWindow::new(limit, period));
+    let gcra = Arc::new(Gcra::new(limit, period));
     let governor = Arc::new(RateLimiter::direct(Quota::per_second(
         NonZeroU32::new(limit_u.try_into().unwrap()).unwrap(),
     )));
@@ -151,6 +152,14 @@ fn bench_all_scenarios(c: &mut Criterion) {
             ),
         ),
         (
+            "shot_standard_gcra",
+            BoxCloneSyncService::new(
+                ServiceBuilder::new()
+                    .layer(RateLimitLayer::new(gcra.clone()))
+                    .service(service_fn(noop_handler)),
+            ),
+        ),
+        (
             "shot_managed_fixed",
             BoxCloneSyncService::new(
                 ServiceBuilder::new()
@@ -178,6 +187,17 @@ fn bench_all_scenarios(c: &mut Criterion) {
                 ServiceBuilder::new()
                     .layer(ManagedRateLimitLayer::new(
                         bucket.clone(),
+                        Duration::from_millis(100),
+                    ))
+                    .service(service_fn(noop_handler)),
+            ),
+        ),
+        (
+            "shot_managed_gcra",
+            BoxCloneSyncService::new(
+                ServiceBuilder::new()
+                    .layer(ManagedRateLimitLayer::new(
+                        gcra.clone(),
                         Duration::from_millis(100),
                     ))
                     .service(service_fn(noop_handler)),

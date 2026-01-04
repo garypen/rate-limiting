@@ -71,16 +71,20 @@ impl Strategy for Gcra {
     fn process(&self) -> ControlFlow<Reason> {
         let now_instant = self.clock.now();
         let now = now_instant.duration_since(self.anchor).as_nanos() as u64;
+        let mut spins = 0;
 
         loop {
+            // After a number of spins, yield to the scheduler to let other threads run.
+            // This helps resolve contention on highly-loaded systems.
+            if spins > 10 {
+                std::thread::yield_now();
+            }
+
             let tat = self.tat.load(Ordering::Acquire);
 
             let arrival = if now > tat { now } else { tat };
             let next_tat = arrival + self.emission_interval_ns;
 
-            // Change: Use >= to prevent the 'extra' burst slot.
-            // This ensures that if tolerance is 1000ms and interval is 100ms,
-            // the 11th request (which would put next_tat at 1100ms) is rejected.
             if next_tat > now + self.delay_tolerance_ns {
                 let wait_ns = next_tat - (now + self.delay_tolerance_ns);
                 return ControlFlow::Break(Reason::Overloaded {
@@ -95,6 +99,8 @@ impl Strategy for Gcra {
             {
                 return ControlFlow::Continue(());
             }
+            // If CAS fails, another thread updated tat; loop and recalculate.
+            spins += 1;
         }
     }
 }
