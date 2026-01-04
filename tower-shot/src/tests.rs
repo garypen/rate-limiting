@@ -9,6 +9,7 @@ use std::task::Poll;
 use std::time::Duration;
 
 use shot_limit::FixedWindow;
+use shot_limit::Gcra;
 use shot_limit::Reason;
 use shot_limit::SlidingWindow;
 use shot_limit::Strategy;
@@ -124,6 +125,8 @@ test_limiter_service!(
     TokenBucket,
     |cap, int| TokenBucket::new(cap, NonZeroUsize::new(1).unwrap(), int)
 );
+
+test_limiter_service!(gcra_tests, Gcra, Gcra::new);
 
 #[tokio::test]
 async fn test_layer_integration() {
