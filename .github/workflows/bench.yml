@@ -22,7 +22,7 @@ jobs:
       - name: Run Stress Tests
         # We run with --release to get accurate atomic performance
         # We use --nocapture to see your custom print statements in the logs
-        run: cargo run --release --example stress_test -- --nocapture
+        run: cargo run --release --example stress -- --nocapture
 
       - name: Run Micro-benchmarks
         # If you use Criterion.rs for the "Naked Logic" benchmarks
