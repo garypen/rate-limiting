@@ -4,9 +4,8 @@ Core atomic rate-limiting strategies for high-throughput Rust services. This cra
 
 ## Features
 
-- **Atomic-First Design**: Uses `std::sync::atomic` primitives for state management.
+- **High-Performance Primitives**: Uses `std::sync::atomic` and the `quanta` TSC-based clock for state management.
 - **Lock-Free Hot Path**: No `Mutex` or `RwLock` contention, even under extreme thread pressure.
-- **Zero Dependencies**: Focused, lightweight, and fast.
 - **Lazy Evaluation**: Refills and window rotations are calculated at the time of the request, eliminating the need for background worker threads.
 
 ## Performance
@@ -14,12 +13,13 @@ Core atomic rate-limiting strategies for high-throughput Rust services. This cra
 Built for extreme scale on modern hardware. The following benchmarks were recorded on an **Apple M1 (8-core)** using the included `criterion` suite:
 
 | Strategy | Single-Threaded | 8-Thread Parallel (Effective) |
-| :--- | :--- | :--- |
-| **Token Bucket** | 24.3 ns | **3.3 ns** |
-| **Fixed Window** | 26.2 ns | **3.8 ns** |
-| **Sliding Window** | 35.5 ns | **5.1 ns** |
+|:---|:---:|:---:|
+| **Token Bucket** | 2.18 ns | **0.40 ns** |
+| **Fixed Window** | 1.87 ns | **0.33 ns** |
+| **Sliding Window** | 4.22 ns | **0.61 ns** |
+| **GCRA** | 1.92 ns | **0.38 ns** |
 
-*Note: Total throughput at 8 threads exceeds **300 million operations per second** for the Token Bucket strategy.*
+*Note: Total throughput at 8 threads exceeds **3 billion operations per second** for the Fixed Window strategy.*
 
 
 
@@ -33,11 +33,12 @@ use shot_limit::Strategy;
 use std::time::Duration;
 use std::num::NonZeroUsize;
 
-let limit = NonZeroUsize::new(100).unwrap();
+let capacity = NonZeroUsize::new(100).unwrap();
+let increment = NonZeroUsize::new(100).unwrap();
 let period = Duration::from_secs(60);
 
-// Initialize a Token Bucket with 100 tokens, refilling every minute
-let bucket = TokenBucket::new(limit, 100, period);
+// Initialize a Token Bucket with a capacity of 100 tokens, refilling 100 tokens every minute
+let bucket = TokenBucket::new(capacity, increment, period);
 
 if bucket.process().is_continue() {
     // Request allowed
@@ -57,7 +58,8 @@ Divides time into fixed slots (e.g., 1-minute windows). Simple and extremely low
 ### Sliding Window
 A weighted algorithm that accounts for the previous window's traffic to smooth out boundary bursts. Provides significantly more accuracy than Fixed Window with only a minor performance trade-off for the additional floating-point calculations.
 
-
+### GCRA (Generic Cell Rate Algorithm)
+A highly efficient and mathematically elegant algorithm that provides a strict, predictable rate limit without the burstiness of a token bucket. It's an excellent choice when you need to enforce a smooth, even flow of traffic.
 
 ## Development
 

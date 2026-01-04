@@ -132,6 +132,10 @@ async fn main() -> Result<(), BoxError> {
             app.layer(
                 ServiceBuilder::new()
                     .layer(HandleErrorLayer::new(handle_shot_error))
+                    // Since we aren't using ManagedRateLimitLayer, we
+                    // specify load shedding and timeout manually.
+                    .timeout(args.timeout)
+                    .load_shed()
                     .layer(layer)
                     .map_err(BoxError::from),
             )
@@ -151,8 +155,8 @@ async fn main() -> Result<(), BoxError> {
 
     println!(
         "📡 Listening on http://{}", 
-       listener.local_addr()?.to_string())
-    ;
+        listener.local_addr()?.to_string()
+    );
 
     axum::serve(listener, app).await?;
 

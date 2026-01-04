@@ -29,11 +29,11 @@ Add `tower-shot` and `shot-limit` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tower-shot = "0.1"
-shot-limit = "0.1"
-tower = { version = "0.5", features = ["util"] }
-axum = "0.8"
-tokio = { version = "1.0", features = ["full"] }
+tower-shot = "0.1.0"
+shot-limit = "0.1.0"
+tower = { version = "0.5.2", features = ["full"] }
+axum = "0.8.8"
+tokio = { version = "1.48.0", features = ["full"] }
 
 ## Quick Start
 
@@ -107,7 +107,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 | **Strategy** | Any `shot-limit` Strategy | Any `shot-limit` Strategy |
 | **Failure Mode** | Fails immediately if no permit | Fails after `timeout` duration |
 | **Typical Use** | Low-latency internal APIs | Public-facing SLAs |
-| **Overhead** | ~115 ns | ~216 ns |
+| **Overhead** | ~103 ns | ~199 ns |
 
 #### When to use Standard
 The **Standard** layer is the absolute fastest path. It is ideal for high-volume internal microservices where you want a "hard wall" and expect the client to handle retries or backoff immediately.
@@ -146,7 +146,7 @@ Tower Shot categorizes failures so your clients can react appropriately without 
 
 ## Performance
 
-`tower-shot` is designed for high-throughput services where middleware overhead must be kept to an absolute minimum. In our benchmarks, `tower-shot` consistently outperforms the native Tower implementation by a factor of **48x** and even edges out specialized crates like `governor`.
+`tower-shot` is designed for high-throughput services where middleware overhead must be kept to an absolute minimum. In our benchmarks, `tower-shot` consistently outperforms the native Tower implementation by a factor of **55x** and even edges out specialized crates like `governor`.
 
 ### Benchmarks
 
@@ -166,25 +166,25 @@ cargo run --bin stress_test --release
 The following table shows the raw overhead introduced by the middleware for a single request (Lower is better):
 
 | Implementation | Latency (ns) | Relative Speed |
-| :--- | :--- | :--- |
-| `tower::limit::RateLimit` | 5,614 ns | 1x |
-| `governor` | 135 ns | 41x faster |
-| **`tower-shot` (Standard)** | **115 ns** | **48x faster** |
-| **`tower-shot` (Managed)** | **216 ns** | **26x faster** |
+|:---|:---:|:---:|
+| `tower::limit::RateLimit` | 5,658 ns | 1x |
+| `governor` | 140 ns | 40x faster |
+| **`tower-shot` (Standard)** | **103 ns** | **55x faster** |
+| **`tower-shot` (Managed)** | **199 ns** | **28x faster** |
 
 ### High Contention Scaling
 
 When under pressure from **1,000 concurrent tasks** competing for permits, `tower-shot` maintains its lead by minimizing lock contention:
 
-* **`tower-shot` (Standard):** 191 µs
+* **`tower-shot` (Standard):** 182 µs
 * **`governor`:** 199 µs
-* **`tower::limit::RateLimit`:** 504 µs
+* **`tower::limit::RateLimit`:** 521 µs
 
 ### Key Takeaways
 
-* **Negligible Overhead:** Adding the standard `RateLimitLayer` adds only **~115 nanoseconds** to your request path—virtually invisible in most networked applications.
+* **Negligible Overhead:** Adding the standard `RateLimitLayer` adds only **~103 nanoseconds** to your request path—virtually invisible in most networked applications.
 * **Predictable Stability:** While native Tower implementations often show significant jitter (up to **17% outliers**) under load, `tower-shot` remains stable with significantly fewer timing outliers.
-* **Managed Efficiency:** The "Managed" layer provides failsafe timeouts and backpressure **without using internal buffers**, ensuring that even your managed paths remain **26x faster** than the basic native Tower limiter.
+* **Managed Efficiency:** The "Managed" layer provides failsafe timeouts and backpressure **without using internal buffers**, ensuring that even your managed paths remain **28x faster** than the basic native Tower limiter.
 
 ## License
 

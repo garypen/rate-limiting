@@ -11,11 +11,11 @@ This project is split into two specialized crates:
 
 ## Why Choose Shot?
 
-I was motivated to see if there was a better way to perform Rate Limiting than the existing `tower` implementation. I wanted configurable, by strategy, rate limiting and I wanted to eliminate the use of Buffering.
+**Shot** was created to provide a better rate-limiting solution for Rust applications, focusing on configurability, performance, and eliminating buffer bloat.
 
-From these core goals, I've ended up with two `tower` Layers:
- - `ManagedRateLimitLayer` - opinionated and providing timeouts and load shedding. 
- - `RateLimitLayer` - drop in replacement for the existing `tower` Rate Limit.
+It offers two `tower` layers to suit different needs:
+ - `ManagedRateLimitLayer`: An opinionated layer that provides timeouts and load shedding, ideal for protecting public-facing services.
+ - `RateLimitLayer`: A drop-in replacement for the existing `tower` rate-limiting layer, designed for maximum performance.
 
 ## Performance & Scaling
 
