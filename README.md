@@ -35,8 +35,8 @@ These strategies scale efficiently, maintaining high performance under multi-thr
 
 ### `tower-shot` (Middleware)
 `tower-shot` introduces minimal overhead while providing robust rate-limiting middleware.
-- **Standard `tower-shot` Layer:** ~106 ns latency, offering a significant speedup (59x faster) compared to `tower::limit::RateLimit`.
-- **Managed `tower-shot` Layer:** ~215 ns latency, providing advanced features like timeouts and load shedding while remaining highly performant (29x faster than `tower::limit::RateLimit`).
+- **Standard `tower-shot` Layer:** ~104 ns latency, offering a significant speedup (59x faster) compared to `tower::limit::RateLimit`.
+- **Managed `tower-shot` Layer:** ~211 ns latency, providing advanced features like timeouts and load shedding while remaining highly performant (29x faster than `tower::limit::RateLimit`).
 
 Under high contention (1,000 concurrent tasks), `tower-shot` layers maintain excellent performance, with the Standard layer processing requests in approximately 180 µs. For full details, see [`tower-shot/README.md`](./tower-shot/README.md).
 

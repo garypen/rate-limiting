@@ -25,6 +25,7 @@ impl Gcra {
     pub fn new(limit: NonZeroUsize, period: Duration) -> Self {
         Self::with_clock(limit, period, Clock::new())
     }
+
     pub fn with_clock(limit: NonZeroUsize, period: Duration, clock: Clock) -> Self {
         let anchor = clock.now();
         let period_ns = period.as_nanos() as u64;
