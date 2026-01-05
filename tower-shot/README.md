@@ -29,8 +29,11 @@ Add `tower-shot` and `shot-limit` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tower-shot = "0.1.0"
-shot-limit = "0.1.0"
+# tower-shot = "0.1.0"
+# shot-limit = "0.1.0"
+# Until I release to crates.io, you can use git
+tower-shot = { version = "0.1.0", git = "https://github.com/garypen/rate-limiting.git", branch = "main" }
+shot-limit = { version = "0.1.0", git = "https://github.com/garypen/rate-limiting.git", branch = "main" }
 tower = { version = "0.5.2", features = ["full"] }
 axum = "0.8.8"
 tokio = { version = "1.48.0", features = ["full"] }
@@ -57,8 +60,8 @@ use tower_shot::ManagedRateLimitLayer;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Define the rate limiting strategy
-    let capacity = 100;
-    let refill_amount = 10;
+    let capacity = 100.try_into()?;
+    let refill_amount = 10.try_into()?;
     let period = Duration::from_secs(1);
     
     // Using Arc allows the strategy to be shared across threads
