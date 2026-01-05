@@ -3,8 +3,9 @@ name: Performance Benchmarks
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
+  # Performance tests take a long time to run. Only run on pushes to main.
+  # pull_request:
+    # branches: [ main ]
 
 jobs:
   benchmark:
