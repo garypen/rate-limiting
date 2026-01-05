@@ -19,10 +19,10 @@ crate-type = ["cdylib", "rlib"]
 quanta = "0.12.6"
 
 [dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 futures.workspace = true
 governor = "0.10.4"
-more-asserts = "0.2.2"
+more-asserts = "0.3.0"
 tokio.workspace = true
 
 [[bench]]
