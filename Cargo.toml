@@ -2,6 +2,7 @@
 resolver = "2"
 
 members = [
+    "py-shot-limit",
     "shot-limit",
     "tower-shot"
 ]

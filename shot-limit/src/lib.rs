@@ -46,9 +46,6 @@ pub use gcra::Gcra;
 pub use sliding_window::SlidingWindow;
 pub use token_bucket::TokenBucket;
 
-#[cfg(test)]
-mod python_tests;
-
 /// Reasons why a request might be rejected by a strategy.
 #[derive(Debug, PartialEq)]
 pub enum Reason {
@@ -69,12 +66,4 @@ pub trait Strategy: Debug {
     ///
     /// Returns `Reason` if the rate limit has been reached.
     fn process(&self) -> ControlFlow<Reason>;
-}
-
-mod python;
-
-#[pyo3::prelude::pymodule]
-fn shot_limit(m: pyo3::prelude::Bound<'_, pyo3::prelude::PyModule>) -> pyo3::prelude::PyResult<()> {
-    python::init_python_module(&m)?;
-    Ok(())
 }

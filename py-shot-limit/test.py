@@ -1,5 +1,5 @@
 import time
-import shot_limit
+import py_shot_limit as shot_limit
 
 print("--- Testing TokenBucket ---")
 # Create a bucket with a capacity of 2, and that refills 1 token every 5 seconds

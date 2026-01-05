@@ -1,5 +1,5 @@
 [package]
-name = "shot-limit"
+name = "py-shot-limit"
 version.workspace = true
 edition.workspace = true
 description = "strategy driven rate limiting library"
@@ -13,18 +13,9 @@ keywords = ["rate", "limiting", "strategy"]
 categories = ["concurrency", "algorithms"]
 
 [lib]
-crate-type = ["cdylib", "rlib"]
+name = "py_shot_limit"
+crate-type = ["cdylib"]
 
 [dependencies]
-quanta = "0.12.6"
-
-[dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
-futures.workspace = true
-governor = "0.10.4"
-more-asserts = "0.2.2"
-tokio.workspace = true
-
-[[bench]]
-name = "strategy_bench"
-harness = false
+pyo3 = { version = "0.27.2", features = ["extension-module"] }
+shot-limit = { version = "0.1.0", path = "../shot-limit" }
