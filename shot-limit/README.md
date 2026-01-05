@@ -69,50 +69,6 @@ Run the benchmark suite to verify performance on your specific architecture. On 
 cargo bench
 ```
 
-## Python Bindings
-
-This crate also provides Python bindings, allowing you to use the rate-limiting strategies directly in Python applications.
-
-### Setup
-
-To set up the Python environment and run tests:
-
-1.  **Build the Rust project with Python bindings**:
-    ```bash
-    maturin develop --release
-    ```
-    This command will build the Rust code and install the `shot_limit` Python package into your active Python environment.
-
-2.  **Activate the Python virtual environment** (if you're using one, which is recommended):
-    ```bash
-    source .venv/bin/activate
-    ```
-    If you don't have a virtual environment, you can create one using `python -m venv .venv` and then activate it.
-
-3.  **Run the Python tests**:
-    ```bash
-    python test.py
-    ```
-
-### Example Usage (Python)
-
-```python
-import shot_limit
-import time
-
-# TokenBucket Example
-bucket = shot_limit.TokenBucket(capacity=2, increment=1, period_secs=5)
-print(f"TokenBucket Call 1: {'Allowed' if bucket.process() else 'Denied'}")
-time.sleep(6) # Wait for refill
-print(f"TokenBucket Call 2: {'Allowed' if bucket.process() else 'Denied'}")
-
-# FixedWindow Example
-fw = shot_limit.FixedWindow(capacity=2, interval_secs=1)
-print(f"FixedWindow Call 1: {'Allowed' if fw.process() else 'Denied'}")
-print(f"FixedWindow Call 2: {'Allowed' if fw.process() else 'Denied'}") # Allowed
-print(f"FixedWindow Call 3: {'Allowed' if fw.process() else 'Denied'}") # Denied
-```
-
 ## License
 
 Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT license](LICENSE-MIT) at your option.
