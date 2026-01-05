@@ -3,7 +3,11 @@ use std::time::Duration;
 
 use pyo3::prelude::*;
 
-use crate::{FixedWindow, Gcra, SlidingWindow, Strategy, TokenBucket};
+use shot_limit::FixedWindow;
+use shot_limit::Gcra;
+use shot_limit::SlidingWindow;
+use shot_limit::Strategy;
+use shot_limit::TokenBucket;
 
 /// A dummy function to verify the Python bindings.
 #[pyfunction]
