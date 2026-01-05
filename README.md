@@ -4,10 +4,11 @@ A high-performance, atomic-based rate limiting ecosystem for Rust services.
 
 ## The Ecosystem
 
-This project is split into two specialized crates:
+This project is split into three specialized crates:
 
 * **`shot-limit`**: The core engine. It contains the logic for rate-limiting strategies (Token Bucket, Fixed Window, Sliding Window). It is zero-cost, generic, and can be used independently of any networking framework.
-* **`tower-shot`**: The integration layer. It provides `tower::Layer` and `tower::Service` implementations that wrap `shot-limit` strategies, making them easy to use with `axum`, `tonic`, or any other Tower-compatible stack.
+* **`tower-shot`**: The integration layer for `async` Rust. It provides `tower::Layer` and `tower::Service` implementations that wrap `shot-limit` strategies, making them easy to use with `axum`, `tonic`, or any other Tower-compatible stack.
+* **`py-shot-limit`**: Python bindings for the core engine, making the high-performance strategies available in Python.
 
 ## Why Choose Shot?
 
