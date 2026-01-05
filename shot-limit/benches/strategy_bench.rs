@@ -1,3 +1,4 @@
+use std::hint::black_box;
 use std::num::NonZeroU32;
 use std::num::NonZeroUsize;
 use std::ops::ControlFlow;
@@ -9,7 +10,6 @@ use std::time::Instant;
 
 use criterion::BenchmarkId;
 use criterion::Criterion;
-use criterion::black_box;
 use criterion::criterion_group;
 use criterion::criterion_main;
 

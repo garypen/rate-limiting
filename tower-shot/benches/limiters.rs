@@ -1,3 +1,4 @@
+use std::hint::black_box;
 use std::num::NonZeroU32;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
@@ -5,7 +6,6 @@ use std::time::Duration;
 
 use criterion::BenchmarkGroup;
 use criterion::Criterion;
-use criterion::black_box;
 use criterion::criterion_group;
 use criterion::criterion_main;
 use criterion::measurement::WallTime;
@@ -98,6 +98,7 @@ fn bench_all_scenarios(c: &mut Criterion) {
     let limit_u = 100_000;
     let limit = NonZeroUsize::new(limit_u).unwrap();
     let period = Duration::from_millis(1);
+    let timeout = Duration::from_millis(100);
     let burst_size = 1000;
 
     // 1. Setup Shared Strategies
@@ -118,15 +119,6 @@ fn bench_all_scenarios(c: &mut Criterion) {
     // 2. Define Scenarios (ID, Service)
     // This makes adding new strategies or layers trivial.
     let scenarios: Vec<(&str, BenchService)> = vec![
-        (
-            "tower_native",
-            BoxCloneSyncService::new(
-                ServiceBuilder::new()
-                    .buffer(1_024)
-                    .layer(TowerNativeRateLimit::new(limit_u as u64, period))
-                    .service(service_fn(noop_handler)),
-            ),
-        ),
         (
             "shot_standard_fixed",
             BoxCloneSyncService::new(
@@ -159,54 +151,10 @@ fn bench_all_scenarios(c: &mut Criterion) {
                     .service(service_fn(noop_handler)),
             ),
         ),
-        (
-            "shot_managed_fixed",
-            BoxCloneSyncService::new(
-                ServiceBuilder::new()
-                    .layer(ManagedRateLimitLayer::new(
-                        fixed.clone(),
-                        Duration::from_millis(100),
-                    ))
-                    .service(service_fn(noop_handler)),
-            ),
-        ),
-        (
-            "shot_managed_sliding",
-            BoxCloneSyncService::new(
-                ServiceBuilder::new()
-                    .layer(ManagedRateLimitLayer::new(
-                        sliding.clone(),
-                        Duration::from_millis(100),
-                    ))
-                    .service(service_fn(noop_handler)),
-            ),
-        ),
-        (
-            "shot_managed_bucket",
-            BoxCloneSyncService::new(
-                ServiceBuilder::new()
-                    .layer(ManagedRateLimitLayer::new(
-                        bucket.clone(),
-                        Duration::from_millis(100),
-                    ))
-                    .service(service_fn(noop_handler)),
-            ),
-        ),
-        (
-            "shot_managed_gcra",
-            BoxCloneSyncService::new(
-                ServiceBuilder::new()
-                    .layer(ManagedRateLimitLayer::new(
-                        gcra.clone(),
-                        Duration::from_millis(100),
-                    ))
-                    .service(service_fn(noop_handler)),
-            ),
-        ),
-        (
-            "governor",
+        ("standard_governor", {
+            let governor_clone = governor.clone();
             BoxCloneSyncService::new(service_fn(move |req| {
-                let limiter = governor.clone();
+                let limiter = governor_clone.clone();
                 async move {
                     if limiter.check().is_ok() {
                         noop_handler(req).await
@@ -214,7 +162,73 @@ fn bench_all_scenarios(c: &mut Criterion) {
                         Err("Rate limited".into())
                     }
                 }
-            })),
+            }))
+        }),
+        (
+            "standard_tower_native",
+            BoxCloneSyncService::new(
+                ServiceBuilder::new()
+                    .buffer(1_024)
+                    .layer(TowerNativeRateLimit::new(limit_u as u64, period))
+                    .service(service_fn(noop_handler)),
+            ),
+        ),
+        (
+            "shot_managed_fixed",
+            BoxCloneSyncService::new(
+                ServiceBuilder::new()
+                    .layer(ManagedRateLimitLayer::new(fixed.clone(), timeout))
+                    .service(service_fn(noop_handler)),
+            ),
+        ),
+        (
+            "shot_managed_sliding",
+            BoxCloneSyncService::new(
+                ServiceBuilder::new()
+                    .layer(ManagedRateLimitLayer::new(sliding.clone(), timeout))
+                    .service(service_fn(noop_handler)),
+            ),
+        ),
+        (
+            "shot_managed_bucket",
+            BoxCloneSyncService::new(
+                ServiceBuilder::new()
+                    .layer(ManagedRateLimitLayer::new(bucket.clone(), timeout))
+                    .service(service_fn(noop_handler)),
+            ),
+        ),
+        (
+            "shot_managed_gcra",
+            BoxCloneSyncService::new(
+                ServiceBuilder::new()
+                    .layer(ManagedRateLimitLayer::new(gcra.clone(), timeout))
+                    .service(service_fn(noop_handler)),
+            ),
+        ),
+        ("managed_governor", {
+            BoxCloneSyncService::new(ServiceBuilder::new().timeout(timeout).load_shed().service(
+                service_fn(move |req| {
+                    let limiter = governor.clone();
+                    async move {
+                        if limiter.check().is_ok() {
+                            noop_handler(req).await
+                        } else {
+                            Err("Rate limited".into())
+                        }
+                    }
+                }),
+            ))
+        }),
+        (
+            "managed_tower_native",
+            BoxCloneSyncService::new(
+                ServiceBuilder::new()
+                    .timeout(timeout)
+                    .load_shed()
+                    .buffer(1_024)
+                    .layer(TowerNativeRateLimit::new(limit_u as u64, period))
+                    .service(service_fn(noop_handler)),
+            ),
         ),
     ];
 
