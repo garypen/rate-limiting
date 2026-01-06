@@ -144,14 +144,17 @@ fn run_all_benches(c: &mut Criterion) {
 
     // --- 2. Run Static Dispatch Benches (Direct calls) ---
 
+    /*
     // FixedWindow
     bench_single_strategy("FixedWindow-Static", c, Arc::clone(&fw));
     bench_parallel_strategy("FixedWindow-Static", c, fw.clone());
+    */
 
     // SlidingWindow
     bench_single_strategy("SlidingWindow-Static", c, Arc::clone(&sw));
     bench_parallel_strategy("SlidingWindow-Static", c, sw.clone());
 
+    /*
     // TokenBucket
     bench_single_strategy("TokenBucket-Static", c, Arc::clone(&tb));
     bench_parallel_strategy("TokenBucket-Static", c, tb.clone());
@@ -178,92 +181,8 @@ fn run_all_benches(c: &mut Criterion) {
     for (name, strategy) in strategies {
         bench_dynamic_strategy(name, c, strategy);
     }
+    */
 }
-
-/*
-fn run_all_benches(c: &mut Criterion) {
-    let limit_val = 1_000_000;
-    let limit = NonZeroUsize::new(limit_val).unwrap();
-    let period = Duration::from_secs(60);
-
-    // 1. FixedWindow
-    let fw = Arc::new(FixedWindow::new(limit, period));
-    bench_single_strategy("FixedWindow", c, Arc::clone(&fw));
-    bench_parallel_strategy("FixedWindow", c, fw);
-
-    // 2. SlidingWindow
-    let sw = Arc::new(SlidingWindow::new(limit, period));
-    bench_single_strategy("SlidingWindow", c, Arc::clone(&sw));
-    bench_parallel_strategy("SlidingWindow", c, sw);
-
-    // 3. TokenBucket
-    let tb = Arc::new(TokenBucket::new(limit, limit, period));
-    bench_single_strategy("TokenBucket", c, Arc::clone(&tb));
-    bench_parallel_strategy("TokenBucket", c, tb);
-
-    // 4. Gcra
-    let gcra = Arc::new(Gcra::new(limit, period));
-    bench_single_strategy("Gcra", c, Arc::clone(&gcra));
-    bench_parallel_strategy("Gcra", c, gcra.clone());
-
-    // 5. Governor (Corrected Initialization)
-    let gov_quota = Quota::per_minute(NonZeroU32::new(limit_val as u32).unwrap());
-    let gov_clock = QuantaClock::default();
-
-    // Pass clones of the clock to avoid ownership/reference issues
-    let gov_limiter = Arc::new(RateLimiter::direct_with_clock(gov_quota, gov_clock.clone()));
-    let gov_strat = Arc::new(GovernorStrategy {
-        limiter: gov_limiter,
-        clock: gov_clock,
-    });
-
-    bench_single_strategy("Governor", c, Arc::clone(&gov_strat));
-    bench_parallel_strategy("Governor", c, gov_strat);
-
-    // Dynamic dispatch test (Interface Tax)
-    bench_dynamic_strategy("Gcra", c, gcra);
-}
-fn run_all_benches(c: &mut Criterion) {
-    let limit_val = 1_000_000;
-    let limit = NonZeroUsize::new(limit_val).unwrap();
-    let period = Duration::from_secs(60);
-
-    // FixedWindow
-    let fw = Arc::new(FixedWindow::new(limit, period));
-    bench_single_strategy("FixedWindow", c, Arc::clone(&fw));
-    bench_parallel_strategy("FixedWindow", c, fw);
-
-    // SlidingWindow
-    let sw = Arc::new(SlidingWindow::new(limit, period));
-    bench_single_strategy("SlidingWindow", c, Arc::clone(&sw));
-    bench_parallel_strategy("SlidingWindow", c, sw);
-
-    // TokenBucket
-    let tb = Arc::new(TokenBucket::new(limit, limit, period));
-    bench_single_strategy("TokenBucket", c, Arc::clone(&tb));
-    bench_parallel_strategy("TokenBucket", c, tb);
-
-    // Gcra
-    let gcra = Arc::new(Gcra::new(limit, period));
-    bench_single_strategy("Gcra", c, Arc::clone(&gcra));
-    bench_parallel_strategy("Gcra", c, gcra.clone());
-
-    // Governor (Integrated into standard strategy benches)
-    let gov_quota = Quota::per_minute(NonZeroU32::new(limit_val as u32).unwrap());
-    let gov_clock = QuantaClock::default();
-    let gov_limiter = Arc::new(RateLimiter::direct_with_clock(gov_quota, &gov_clock));
-    let gov_strat = Arc::new(GovernorStrategy {
-        limiter: gov_limiter,
-        clock: gov_clock,
-    });
-
-    bench_single_strategy("Governor", c, Arc::clone(&gov_strat));
-    bench_parallel_strategy("Governor", c, gov_strat.clone());
-
-    // Dynamic dispatch test to see the "Interface Tax"
-    bench_dynamic_strategy("Gcra", c, gcra);
-}
-*/
 
 criterion_group!(benches, run_all_benches);
 criterion_main!(benches);

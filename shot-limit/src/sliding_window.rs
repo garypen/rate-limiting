@@ -16,7 +16,7 @@ use super::Strategy;
 #[derive(Debug)]
 pub struct SlidingWindow {
     capacity: usize,
-    interval_ns: u64,
+    period_ns: u64,
     /// Current window's request count
     current_count: AtomicUsize,
     /// Previous window's request count
@@ -28,12 +28,12 @@ pub struct SlidingWindow {
 }
 
 impl SlidingWindow {
-    pub fn new(capacity: NonZeroUsize, interval: Duration) -> Self {
+    pub fn new(capacity: NonZeroUsize, period: Duration) -> Self {
         let clock = Clock::new();
         let anchor = clock.now();
         Self {
             capacity: capacity.get(),
-            interval_ns: interval.as_nanos() as u64,
+            period_ns: period.as_nanos() as u64,
             current_count: AtomicUsize::new(0),
             previous_count: AtomicUsize::new(0),
             current_window_start: AtomicU64::new(0),
@@ -50,8 +50,8 @@ impl Strategy for SlidingWindow {
         let mut window_start = self.current_window_start.load(Ordering::Acquire);
 
         // 1. Check if we need to slide the window
-        if now >= window_start + self.interval_ns {
-            let new_window_start = (now / self.interval_ns) * self.interval_ns;
+        if now >= window_start + self.period_ns {
+            let new_window_start = (now / self.period_ns) * self.period_ns;
 
             if self
                 .current_window_start
@@ -64,7 +64,7 @@ impl Strategy for SlidingWindow {
                 .is_ok()
             {
                 // If we moved at least two windows forward, previous_count is 0
-                let prev_val = if now >= window_start + (2 * self.interval_ns) {
+                let prev_val = if now >= window_start + (2 * self.period_ns) {
                     0
                 } else {
                     self.current_count.load(Ordering::Acquire)
@@ -74,24 +74,30 @@ impl Strategy for SlidingWindow {
                 self.current_count.store(0, Ordering::Release);
                 window_start = new_window_start;
             } else {
+                // May have been set by a different thread
                 window_start = self.current_window_start.load(Ordering::Acquire);
             }
         }
 
         // 2. Calculate the weighted count
         let prev_count = self.previous_count.load(Ordering::Acquire) as f64;
-        let curr_count = self.current_count.load(Ordering::Acquire) as f64;
+        let curr_count = self.current_count.load(Ordering::Acquire);
 
         let elapsed_in_window = now - window_start;
-        let weight = (self.interval_ns - elapsed_in_window) as f64 / self.interval_ns as f64;
-        let estimated_count = (prev_count * weight) + curr_count;
+        let weight = (self.period_ns - elapsed_in_window) as f64 / self.period_ns as f64;
+        let estimated_count = (prev_count * weight).floor() as usize + curr_count;
 
-        if estimated_count < self.capacity as f64 {
+        if estimated_count < self.capacity {
             self.current_count.fetch_add(1, Ordering::SeqCst);
             ControlFlow::Continue(())
         } else {
             // Estimate wait time based on when the weighted count would drop below capacity
-            let retry_after_ns = self.interval_ns / 2; // Rough estimate for simplicity
+            let missing = estimated_count - self.capacity;
+            let retry_after_ns = if missing > 0 {
+                ((missing as f64 / self.capacity as f64) * self.period_ns as f64).ceil() as u64
+            } else {
+                0
+            };
             ControlFlow::Break(Reason::Overloaded {
                 retry_after: Duration::from_nanos(retry_after_ns),
             })
@@ -122,7 +128,7 @@ mod tests {
 
     #[test]
     fn it_loosely_enforces_sleepy_limits_with_sleep() {
-        // Use a short interval so we rotate frequently
+        // Use a short period so we rotate frequently
         let rl = SlidingWindow::new(NonZeroUsize::new(100).unwrap(), Duration::from_millis(10));
 
         let mut count = 0;
@@ -131,7 +137,7 @@ mod tests {
             if outcome.is_continue() {
                 count += 1;
             } else {
-                // If blocked, sleep for a full interval to ensure a rotation occurs
+                // If blocked, sleep for a full period to ensure a rotation occurs
                 std::thread::sleep(Duration::from_millis(10));
             }
         }
@@ -173,14 +179,14 @@ mod tests {
 
     #[test]
     fn test_sliding_window_long_idle() {
-        let interval = Duration::from_millis(10);
-        let rl = SlidingWindow::new(NonZeroUsize::new(10).unwrap(), interval);
+        let period = Duration::from_millis(10);
+        let rl = SlidingWindow::new(NonZeroUsize::new(10).unwrap(), period);
 
         // Use a token
         let _ = rl.process();
 
-        // Sleep for 10x the interval (100ms)
-        std::thread::sleep(interval * 10);
+        // Sleep for 10x the period (100ms)
+        std::thread::sleep(period * 10);
 
         // This call triggers the "slide" logic
         assert!(rl.process().is_continue());
@@ -190,17 +196,17 @@ mod tests {
         let window_start = rl.current_window_start.load(Ordering::Acquire);
         let prev_count = rl.previous_count.load(Ordering::Acquire);
 
-        // 1. The window start should be the most recent boundary (now - (now % interval))
+        // 1. The window start should be the most recent boundary (now - (now % period))
         assert!(
             window_start <= now,
             "Window start should not be in the future"
         );
         assert!(
-            now < window_start + rl.interval_ns,
+            now < window_start + rl.period_ns,
             "Now must fall within the current window"
         );
 
-        // 2. Since we slept for 10 intervals, the previous window's count must be 0
+        // 2. Since we slept for 10 periods, the previous window's count must be 0
         assert_eq!(
             prev_count, 0,
             "Previous count should be cleared after long idle"
