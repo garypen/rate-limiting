@@ -144,17 +144,14 @@ fn run_all_benches(c: &mut Criterion) {
 
     // --- 2. Run Static Dispatch Benches (Direct calls) ---
 
-    /*
     // FixedWindow
     bench_single_strategy("FixedWindow-Static", c, Arc::clone(&fw));
     bench_parallel_strategy("FixedWindow-Static", c, fw.clone());
-    */
 
     // SlidingWindow
     bench_single_strategy("SlidingWindow-Static", c, Arc::clone(&sw));
     bench_parallel_strategy("SlidingWindow-Static", c, sw.clone());
 
-    /*
     // TokenBucket
     bench_single_strategy("TokenBucket-Static", c, Arc::clone(&tb));
     bench_parallel_strategy("TokenBucket-Static", c, tb.clone());
@@ -181,7 +178,6 @@ fn run_all_benches(c: &mut Criterion) {
     for (name, strategy) in strategies {
         bench_dynamic_strategy(name, c, strategy);
     }
-    */
 }
 
 criterion_group!(benches, run_all_benches);

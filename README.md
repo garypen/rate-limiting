@@ -28,17 +28,17 @@ The performance of the various strategies and layers is demonstrated in the incl
 
 ### `shot-limit` (Core Strategies)
 The core `shot-limit` strategies demonstrate extremely low overhead, with single-threaded operations typically in the low nanoseconds. For instance:
-- **Fixed Window:** ~1.87 ns (single-threaded)
-- **GCRA:** ~2.01 ns (single-threaded)
+- **Fixed Window:** ~2.18 ns (single-threaded)
+- **GCRA:** ~1.99 ns (single-threaded)
 
 These strategies scale efficiently, maintaining high performance under multi-threaded loads (e.g., Fixed Window at ~0.33 ns per operation with 8 threads). For full details, see [`shot-limit/README.md`](./shot-limit/README.md).
 
 ### `tower-shot` (Middleware)
 `tower-shot` introduces minimal overhead while providing robust rate-limiting middleware.
-- **Standard `tower-shot` Layer:** ~104 ns latency, offering a significant speedup (59x faster) compared to `tower::limit::RateLimit`.
-- **Managed `tower-shot` Layer:** ~211 ns latency, providing advanced features like timeouts and load shedding while remaining highly performant (29x faster than `tower::limit::RateLimit`).
+- **Standard `tower-shot` Layer:** ~107 ns latency, offering a significant speedup (59x faster) compared to `tower::limit::RateLimit`.
+- **Managed `tower-shot` Layer:** ~197 ns latency, providing advanced features like timeouts and load shedding while remaining highly performant (29x faster than `tower::limit::RateLimit`).
 
-Under high contention (1,000 concurrent tasks), `tower-shot` layers maintain excellent performance, with the Standard layer processing requests in approximately 180 µs. For full details, see [`tower-shot/README.md`](./tower-shot/README.md).
+Under high contention (1,000 concurrent tasks), `tower-shot` layers maintain excellent performance, with the Standard layer processing requests in approximately 181 µs. For full details, see [`tower-shot/README.md`](./tower-shot/README.md).
 
 ## License
 

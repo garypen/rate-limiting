@@ -15,9 +15,9 @@ Built for extreme scale on modern hardware. The following benchmarks were record
 | Strategy | Single-Threaded | 8-Thread Parallel |
 |:---|:---:|:---:|
 | **Token Bucket** | 2.69 ns | 0.56 ns |
-| **Fixed Window** | 1.87 ns | 0.33 ns |
-| **Sliding Window** | 4.22 ns | 0.60 ns |
-| **GCRA** | 2.01 ns | 0.39 ns |
+| **Fixed Window** | 2.18 ns | 0.33 ns |
+| **Sliding Window** | 4.23 ns | 0.81 ns |
+| **GCRA** | 1.99 ns | 0.31 ns |
 
 *Note: Total throughput at 8 threads exceeds **3 billion operations per second** for the Fixed Window strategy.*
 
