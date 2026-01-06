@@ -43,12 +43,12 @@ struct PyFixedWindow(FixedWindow);
 #[pymethods]
 impl PyFixedWindow {
     #[new]
-    fn new(capacity: usize, interval_secs: u64) -> PyResult<Self> {
+    fn new(capacity: usize, period_secs: u64) -> PyResult<Self> {
         let capacity = NonZeroUsize::new(capacity).ok_or_else(|| {
             PyErr::new::<pyo3::exceptions::PyValueError, _>("capacity must be non-zero")
         })?;
-        let interval = Duration::from_secs(interval_secs);
-        Ok(PyFixedWindow(FixedWindow::new(capacity, interval)))
+        let period = Duration::from_secs(period_secs);
+        Ok(PyFixedWindow(FixedWindow::new(capacity, period)))
     }
 
     fn process(&self) -> bool {
@@ -81,12 +81,12 @@ struct PySlidingWindow(SlidingWindow);
 #[pymethods]
 impl PySlidingWindow {
     #[new]
-    fn new(capacity: usize, interval_secs: u64) -> PyResult<Self> {
+    fn new(capacity: usize, period_secs: u64) -> PyResult<Self> {
         let capacity = NonZeroUsize::new(capacity).ok_or_else(|| {
             PyErr::new::<pyo3::exceptions::PyValueError, _>("capacity must be non-zero")
         })?;
-        let interval = Duration::from_secs(interval_secs);
-        Ok(PySlidingWindow(SlidingWindow::new(capacity, interval)))
+        let period = Duration::from_secs(period_secs);
+        Ok(PySlidingWindow(SlidingWindow::new(capacity, period)))
     }
 
     fn process(&self) -> bool {

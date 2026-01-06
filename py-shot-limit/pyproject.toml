@@ -1,0 +1,26 @@
+[project]
+name = "py_shot_limit"
+dynamic = ["version"]
+description = "Python bindings for the shot-limit rate limiting library"
+requires-python = ">=3.8"
+authors = [
+    { name = "Gary Pennington", email = "garypen@gmail.com" }
+]
+dependencies = [
+    "maturin==1.10.2",
+    "pytest>=8.3.5",
+]
+
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[tool.pytest]
+minversion = "9.0"
+# addopts = ["-ra", "-q"]
+testpaths = [
+    "tests",
+]
+python_files = [
+    "*.py"
+]

@@ -13,7 +13,7 @@ use super::Strategy;
 
 /// A simple window-based limiter using high-performance TSC timing.
 ///
-/// Divides time into fixed intervals. It is highly performant but can be
+/// Divides time into fixed periods. It is highly performant but can be
 /// susceptible to "boundary bursts" where double the limit is allowed
 /// in a short period spanning two windows.
 #[derive(Debug)]
@@ -22,7 +22,7 @@ pub struct FixedWindow {
     remaining: AtomicUsize,
     /// Absolute nanoseconds (relative to anchor) when the current window expires.
     expires: AtomicU64,
-    interval: u64,
+    period: u64,
     clock: Clock,
     anchor: Instant,
 }
@@ -38,8 +38,8 @@ impl Strategy for FixedWindow {
         if now > expires {
             // Calculate the start of the current window to avoid drift
             // during long idle periods.
-            let window_count = now / self.interval;
-            let next_expires = (window_count + 1) * self.interval;
+            let window_count = now / self.period;
+            let next_expires = (window_count + 1) * self.period;
 
             if self
                 .expires
@@ -77,17 +77,17 @@ impl FixedWindow {
     /// # Arguments
     ///
     /// * `capacity` - The maximum number of requests allowed within a single window.
-    /// * `interval` - The duration of the fixed time window.
-    pub fn new(capacity: NonZeroUsize, interval: Duration) -> Self {
+    /// * `period` - The duration of the fixed time window.
+    pub fn new(capacity: NonZeroUsize, period: Duration) -> Self {
         let clock = Clock::new();
         let anchor = clock.now();
-        let interval_ns = interval.as_nanos() as u64;
+        let period_ns = period.as_nanos() as u64;
 
         Self {
             capacity: capacity.get(),
             remaining: AtomicUsize::new(capacity.get()),
-            interval: interval_ns,
-            expires: AtomicU64::new(interval_ns),
+            period: period_ns,
+            expires: AtomicU64::new(period_ns),
             clock,
             anchor,
         }
@@ -110,14 +110,14 @@ mod tests {
 
     #[test]
     fn test_idle_reset_drift() {
-        let interval = Duration::from_millis(10);
-        let rl = FixedWindow::new(NonZeroUsize::new(1).unwrap(), interval);
+        let period = Duration::from_millis(10);
+        let rl = FixedWindow::new(NonZeroUsize::new(1).unwrap(), period);
 
         // Use the first token
         let _ = rl.process();
 
-        // Sleep for 5 intervals
-        std::thread::sleep(interval * 5);
+        // Sleep for 5 periods
+        std::thread::sleep(period * 5);
 
         // Ideally, this should reset to a fresh window immediately
         assert_eq!(rl.process(), ControlFlow::Continue(()));
@@ -158,8 +158,8 @@ mod tests {
 
     #[test]
     fn test_exact_window_boundary() {
-        let interval = Duration::from_millis(50);
-        let rl = FixedWindow::new(NonZeroUsize::new(1).unwrap(), interval);
+        let period = Duration::from_millis(50);
+        let rl = FixedWindow::new(NonZeroUsize::new(1).unwrap(), period);
 
         let _ = rl.process(); // Consume the only token
 

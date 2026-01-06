@@ -28,8 +28,12 @@ To set up the Python environment and run tests:
 
 3.  **Run the Python tests**:
     ```bash
-    python test.py
+    pytest
     ```
+
+OR (if you just want to run tests)
+
+1.  Just run `cargo test` which will do this for you.
 
 ## Example Usage (Python)
 
@@ -44,7 +48,7 @@ time.sleep(6) # Wait for refill
 print(f"TokenBucket Call 2: {'Allowed' if bucket.process() else 'Denied'}")
 
 # FixedWindow Example
-fw = shot_limit.FixedWindow(capacity=2, interval_secs=1)
+fw = shot_limit.FixedWindow(capacity=2, period_secs=1)
 print(f"FixedWindow Call 1: {'Allowed' if fw.process() else 'Denied'}")
 print(f"FixedWindow Call 2: {'Allowed' if fw.process() else 'Denied'}") # Allowed
 print(f"FixedWindow Call 3: {'Allowed' if fw.process() else 'Denied'}") # Denied
