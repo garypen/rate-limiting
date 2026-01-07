@@ -9,12 +9,6 @@ use shot_limit::SlidingWindow;
 use shot_limit::Strategy;
 use shot_limit::TokenBucket;
 
-/// A dummy function to verify the Python bindings.
-#[pyfunction]
-fn hello() -> PyResult<String> {
-    Ok("Hello from shot-limit!".to_string())
-}
-
 #[pyclass(name = "TokenBucket")]
 struct PyTokenBucket(TokenBucket);
 
@@ -95,7 +89,6 @@ impl PySlidingWindow {
 }
 
 pub fn init_python_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(hello, m)?)?;
     m.add_class::<PyTokenBucket>()?;
     m.add_class::<PyFixedWindow>()?;
     m.add_class::<PyGcra>()?;
