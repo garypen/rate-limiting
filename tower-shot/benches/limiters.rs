@@ -177,7 +177,7 @@ fn bench_all_scenarios(c: &mut Criterion) {
             "shot_managed_fixed",
             BoxCloneSyncService::new(
                 ServiceBuilder::new()
-                    .layer(ManagedRateLimitLayer::new(fixed.clone(), timeout))
+                    .layer(ManagedRateLimitLayer::new(fixed, timeout))
                     .service(service_fn(noop_handler)),
             ),
         ),
@@ -185,7 +185,7 @@ fn bench_all_scenarios(c: &mut Criterion) {
             "shot_managed_sliding",
             BoxCloneSyncService::new(
                 ServiceBuilder::new()
-                    .layer(ManagedRateLimitLayer::new(sliding.clone(), timeout))
+                    .layer(ManagedRateLimitLayer::new(sliding, timeout))
                     .service(service_fn(noop_handler)),
             ),
         ),
@@ -193,7 +193,7 @@ fn bench_all_scenarios(c: &mut Criterion) {
             "shot_managed_bucket",
             BoxCloneSyncService::new(
                 ServiceBuilder::new()
-                    .layer(ManagedRateLimitLayer::new(bucket.clone(), timeout))
+                    .layer(ManagedRateLimitLayer::new(bucket, timeout))
                     .service(service_fn(noop_handler)),
             ),
         ),
@@ -201,7 +201,7 @@ fn bench_all_scenarios(c: &mut Criterion) {
             "shot_managed_gcra",
             BoxCloneSyncService::new(
                 ServiceBuilder::new()
-                    .layer(ManagedRateLimitLayer::new(gcra.clone(), timeout))
+                    .layer(ManagedRateLimitLayer::new(gcra, timeout))
                     .service(service_fn(noop_handler)),
             ),
         ),

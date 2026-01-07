@@ -5,7 +5,7 @@ Core atomic rate-limiting strategies for high-throughput Rust services. This cra
 ## Features
 
 - **High-Performance Primitives**: Uses `std::sync::atomic` and the `quanta` TSC-based clock for state management.
-- **Lock-Free Hot Path**: No `Mutex` or `RwLock` contention, even under extreme thread pressure.
+- **Lock-Free Hot Path**: No `Mutex` or `RwLock` contention.
 - **Lazy Evaluation**: Refills and window rotations are calculated at the time of the request, eliminating the need for background worker threads.
 
 ## Performance
@@ -14,18 +14,18 @@ Built for extreme scale on modern hardware. The following benchmarks were record
 
 | Strategy | Single-Threaded | 8-Thread Parallel |
 |:---|:---:|:---:|
-| **Token Bucket** | 2.69 ns | 0.56 ns |
-| **Fixed Window** | 2.18 ns | 0.33 ns |
-| **Sliding Window** | 4.23 ns | 0.81 ns |
-| **GCRA** | 1.99 ns | 0.31 ns |
+| **Token Bucket** | 3.11 ns | 0.71 ns |
+| **Fixed Window** | 2.58 ns | 0.42 ns |
+| **Sliding Window** | 4.94 ns | 1.09 ns |
+| **GCRA** | 2.32 ns | 0.41 ns |
 
-*Note: Total throughput at 8 threads exceeds **3 billion operations per second** for the Fixed Window strategy.*
+*Note: Total throughput at 8 threads exceeds **2.3 billion operations per second** for the Fixed Window strategy.*
 
 
 
 ## Usage
 
-Each strategy implements the `Strategy` trait, which provides a non-blocking `process()` method.
+Each strategy implements the `Strategy` trait, which provides a `process()` method.
 
 ```rust
 use shot_limit::TokenBucket;

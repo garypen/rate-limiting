@@ -33,7 +33,7 @@ To set up the Python environment and run tests:
 
 OR (if you just want to run tests)
 
-1.  Just run `cargo test` which will do this for you.
+1.  Just run `cargo test`.
 
 ## Example Usage (Python)
 
