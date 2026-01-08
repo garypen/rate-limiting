@@ -332,6 +332,41 @@ async fn test_managed_layer_error_type() {
     }
 }
 
+#[tokio::test]
+async fn test_managed_load_shed_layer_error_type() {
+    let capacity = 1;
+    let limiter = FixedWindow::new(
+        NonZeroUsize::new(capacity).unwrap(),
+        Duration::from_secs(60),
+    );
+
+    // Short timeout (doesn't really matter for LoadShed if it hits immediately)
+    let layer = ManagedLoadShedRateLimitLayer::new(Arc::new(limiter), Duration::from_millis(100));
+
+    let mock_count = Arc::new(AtomicUsize::new(0));
+    let service = ServiceBuilder::new().layer(layer).service(MockService {
+        count: mock_count.clone(),
+    });
+
+    let mut svc1 = service.clone();
+    let mut svc2 = service.clone();
+
+    // 1. First request succeeds
+    svc1.ready().await.unwrap().call(()).await.unwrap();
+
+    // 2. Second request should fail immediately with Overloaded
+    let err = svc2.ready().await.unwrap().call(()).await.unwrap_err();
+
+    if let Some(shot_err) = err.downcast_ref::<ShotError>() {
+        match shot_err {
+            ShotError::Overloaded => {}, // Good
+            _ => panic!("Expected ShotError::Overloaded, got {:?}", shot_err),
+        }
+    } else {
+        panic!("Expected ShotError, got {:?}", err);
+    }
+}
+
 #[derive(Clone)]
 struct ManualService {
     ready: Arc<std::sync::Mutex<bool>>,

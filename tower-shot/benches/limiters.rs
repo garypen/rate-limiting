@@ -26,7 +26,8 @@ use tower::ServiceExt;
 use tower::limit::RateLimitLayer as TowerNativeRateLimit;
 use tower::service_fn;
 use tower::util::BoxCloneSyncService;
-use tower_shot::ManagedRateLimitLayer;
+use tower_shot::ManagedLoadShedRateLimitLayer;
+use tower_shot::ManagedRetryRateLimitLayer;
 use tower_shot::RateLimitLayer;
 
 // --- HELPERS & TYPES ---
@@ -174,34 +175,66 @@ fn bench_all_scenarios(c: &mut Criterion) {
             ),
         ),
         (
-            "shot_managed_fixed",
+            "shot_managed_retry_fixed",
             BoxCloneSyncService::new(
                 ServiceBuilder::new()
-                    .layer(ManagedRateLimitLayer::new(fixed, timeout))
+                    .layer(ManagedRetryRateLimitLayer::new(fixed.clone(), timeout))
                     .service(service_fn(noop_handler)),
             ),
         ),
         (
-            "shot_managed_sliding",
+            "shot_managed_loadshed_fixed",
             BoxCloneSyncService::new(
                 ServiceBuilder::new()
-                    .layer(ManagedRateLimitLayer::new(sliding, timeout))
+                    .layer(ManagedLoadShedRateLimitLayer::new(fixed, timeout))
                     .service(service_fn(noop_handler)),
             ),
         ),
         (
-            "shot_managed_bucket",
+            "shot_managed_retry_sliding",
             BoxCloneSyncService::new(
                 ServiceBuilder::new()
-                    .layer(ManagedRateLimitLayer::new(bucket, timeout))
+                    .layer(ManagedRetryRateLimitLayer::new(sliding.clone(), timeout))
                     .service(service_fn(noop_handler)),
             ),
         ),
         (
-            "shot_managed_gcra",
+            "shot_managed_loadsed_sliding",
             BoxCloneSyncService::new(
                 ServiceBuilder::new()
-                    .layer(ManagedRateLimitLayer::new(gcra, timeout))
+                    .layer(ManagedLoadShedRateLimitLayer::new(sliding, timeout))
+                    .service(service_fn(noop_handler)),
+            ),
+        ),
+        (
+            "shot_managed_retry_bucket",
+            BoxCloneSyncService::new(
+                ServiceBuilder::new()
+                    .layer(ManagedRetryRateLimitLayer::new(bucket.clone(), timeout))
+                    .service(service_fn(noop_handler)),
+            ),
+        ),
+        (
+            "shot_managed_loadshed_bucket",
+            BoxCloneSyncService::new(
+                ServiceBuilder::new()
+                    .layer(ManagedLoadShedRateLimitLayer::new(bucket, timeout))
+                    .service(service_fn(noop_handler)),
+            ),
+        ),
+        (
+            "shot_managed_retry_gcra",
+            BoxCloneSyncService::new(
+                ServiceBuilder::new()
+                    .layer(ManagedRetryRateLimitLayer::new(gcra.clone(), timeout))
+                    .service(service_fn(noop_handler)),
+            ),
+        ),
+        (
+            "shot_managed_loadshed_gcra",
+            BoxCloneSyncService::new(
+                ServiceBuilder::new()
+                    .layer(ManagedLoadShedRateLimitLayer::new(gcra, timeout))
                     .service(service_fn(noop_handler)),
             ),
         ),

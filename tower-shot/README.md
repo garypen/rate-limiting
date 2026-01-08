@@ -56,10 +56,9 @@ Configuring and using `tower-shot` is both simpler, since buffer is not required
 
 ```rust
 let fixed = Arc::new(FixedWindow::new(capacity, period));
-let fixed_layer = ManagedRateLimitLayer::new(fixed, timeout);
+let fixed_layer = ManagedRetryRateLimitLayer::new(fixed, timeout);
 let tower_svc = ServiceBuilder::new()
     .timeout(timeout)
-    .load_shed()
     .layer(fixed_layer)
     .service(service_fn(mock_db_call));
 ```
@@ -67,13 +66,13 @@ let tower_svc = ServiceBuilder::new()
 ### The Proof (Stress Test Results)
 Under a burst of 50,000 concurrent requests with a 10,000-request capacity:
 
-| Metric | Raw Rate Limiter | **Tower Shot (Managed)** |
+| Metric | Raw Rate Limiter | **Tower Shot (Managed Retry)** |
 | :--- | :--- | :--- |
 | **P99 Latency** | **4,500 ms** | **0.5 ms** |
 | **System Health** | Severely Backlogged | Responsive |
 | **Failure Mode** | Unbounded Latency | **SLA Enforcement** |
 
-> **The Result:** Tower Shot ensures that the 10,000 requests that *can* be handled are processed at near-instant speeds, while excess traffic is shed immediately to protect your P99 and system stability.
+> **The Result:** Tower Shot ensures that the 10,000 requests that *can* be handled are processed at near-instant speeds, while excess traffic is shed or retried efficiently to protect your P99 and system stability.
 
 
 ---
@@ -96,7 +95,7 @@ tokio = { version = "1.48.0", features = ["full"] }
 
 ## Quick Start
 
-The following example demonstrates how to set up a `ManagedRateLimitLayer` using a `TokenBucket` strategy in an Axum application. 
+The following example demonstrates how to set up a `ManagedRetryRateLimitLayer` using a `TokenBucket` strategy in an Axum application. 
 
 
 
@@ -111,7 +110,7 @@ use axum::routing::get;
 use shot_limit::TokenBucket;
 use tower::BoxError;
 use tower::ServiceBuilder;
-use tower_shot::ManagedRateLimitLayer;
+use tower_shot::ManagedRetryRateLimitLayer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -124,9 +123,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let strategy = Arc::new(TokenBucket::new(capacity, refill_amount, period));
 
     // 2. Configure the managed layer with a 500ms timeout
-    // ManagedRateLimitLayer does not use internal buffers.
+    // ManagedRetryRateLimitLayer handles retries and timeouts automatically.
     let timeout = Duration::from_millis(500);
-    let managed_layer = ManagedRateLimitLayer::new(strategy, timeout);
+    let managed_layer = ManagedRetryRateLimitLayer::new(strategy, timeout);
 
     // 3. Build the Axum router
     let app = Router::new()
@@ -156,32 +155,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ### Choosing Your Layer: Standard vs. Managed
 
-`tower-shot` provides two primary layers to balance raw performance with operational safety. Both are designed without internal buffers to ensure predictable resource consumption.
+`tower-shot` provides several layers to balance raw performance with operational safety. 
 
 
 
-| Feature | Standard Rate Limit | Managed Rate Limit |
-| :--- | :--- | :--- |
-| **Buffering** | None | **None** |
-| **Strategy** | Any `shot-limit` Strategy | Any `shot-limit` Strategy |
-| **Failure Mode** | Return Poll::Pending if limit exceeded | Fails after `timeout` duration |
-| **Typical Use** | Low-latency internal APIs | Public-facing SLAs |
-| **Overhead** | ~125 ns | ~242 ns |
+| Feature | `RateLimitLayer` | `ManagedRetryRateLimitLayer` | `ManagedLoadShedRateLimitLayer` |
+| :--- | :--- | :--- | :--- |
+| **Strategy** | Any `shot-limit` | Any `shot-limit` | Any `shot-limit` |
+| **Failure Mode** | Return `Poll::Pending` | Retries, then `ShotError::Timeout` | Immediate `ShotError::Overloaded` |
+| **Best For** | Internal microservices | User-facing APIs (Max Throughput) | Critical Load Protection |
+| **Overhead** | ~125 ns | ~242 ns | ~240 ns |
 
-#### When to use Standard
-The **Standard** layer is the absolute fastest path. It is ideal for high-volume internal microservices where you want a "hard wall" and expect the client to handle retries or backoff immediately. Note: You will need to decide how to handle Poll:Pending yourself, unlike Managed there is no load shedding.
+#### When to use `RateLimitLayer`
+The absolute fastest path. Ideal for internal microservices where the client handles backoff. Note: You will need to decide how to handle `Poll::Pending` yourself.
 
-#### When to use Managed
-The **Managed** layer should be your default for user-facing applications. It provides a small "wait window" defined by your `timeout`. 
+#### When to use `ManagedRetryRateLimitLayer` (Default `ManagedRateLimitLayer`)
+Ideal for maximizing throughput. It allows requests to wait briefly (retrying) if tokens aren't immediately available, up to a hard timeout.
 
-
-
-Even without a buffer, the Managed layer allows requests to wait briefly for the next available token (e.g., waiting 50ms for a bucket refill). If a permit isn't available by the end of the timeout, it fails fast to protect your system from "hanging" requests.
+#### When to use `ManagedLoadShedRateLimitLayer`
+Ideal for protecting services from "buffer bloat". It immediately rejects excess traffic, ensuring that the requests that *are* accepted are processed with minimal latency.
 
 ## Features
 
 - **Atomic Strategies**: Uses `shot-limit` for lock-free, $O(1)$ decision making.
-- **Managed Stack**: Pre-composed `Timeout` + `LoadShed` + `RateLimit` layers.
+- **Managed Stack**: Pre-composed `Timeout` + `LoadShed`/`Retry` + `RateLimit` layers.
 - **Axum Integration**: Native `IntoResponse` implementation for `ShotError`.
   - `408 Request Timeout`: Returned when your Latency SLA is exceeded.
   - `503 Service Unavailable`: Returned when the rate limit is hit (Load Shedding).
@@ -198,7 +195,7 @@ Tower Shot categorizes failures so your clients can react appropriately without 
 | Error Variant | HTTP Status | Meaning |
 | :--- | :--- | :--- |
 | `ShotError::Overloaded` | `503` | Rate limit reached; request shed to protect resources. |
-| `ShotError::Timeout` | `408` | Request passed the limiter but the inner service was too slow. |
+| `ShotError::Timeout` | `408` | Request passed the limiter but the entire process (including retries) took too long. |
 | `ShotError::Inner(e)` | `500` | The underlying service returned an error. |
 
 ---
@@ -244,7 +241,7 @@ When under pressure from **1,000 concurrent tasks** competing for permits, `towe
 
 * **Negligible Overhead:** Adding the standard `RateLimitLayer` adds only **~125 nanoseconds** to your request path—virtually invisible in most networked applications.
 * **Predictable Stability:** While native Tower implementations often show significant jitter (up to **17% outliers**) under load, `tower-shot` remains stable with significantly fewer timing outliers.
-* **Managed Efficiency:** The "Managed" layer provides failsafe timeouts and backpressure **without using internal buffers**, ensuring that even your managed paths remain **50x faster** than the basic native Tower limiter.
+* **Managed Efficiency:** The "Managed" layers provide failsafe timeouts and backpressure **without using internal buffers**, ensuring that even your managed paths remain **50x faster** than the basic native Tower limiter.
 
 ## License
 

@@ -20,7 +20,8 @@ use tower::Service;
 use tower::ServiceBuilder;
 use tower::ServiceExt;
 use tower::service_fn;
-use tower_shot::ManagedRateLimitLayer;
+use tower_shot::ManagedLoadShedRateLimitLayer;
+use tower_shot::ManagedRetryRateLimitLayer;
 use tower_shot::RateLimitLayer;
 use tower_shot::ShotError;
 
@@ -156,42 +157,69 @@ async fn main() -> Result<(), BoxError> {
     let timeout = Duration::from_millis(4_900);
     let total_reqs = 50_000;
 
-    // 1.a. Managed Fixed Window Stress
+    // 1.a. Managed Retry Fixed Window Stress
     let fixed = Arc::new(FixedWindow::new(capacity, period));
-    let fixed_svc = ManagedRateLimitLayer::new(fixed, timeout).layer(service_fn(mock_db_call));
-    run_load_test("Managed Fixed Window", fixed_svc, total_reqs).await;
+    let fixed_svc = ManagedRetryRateLimitLayer::new(fixed, timeout).layer(service_fn(mock_db_call));
+    run_load_test("Managed Retry Fixed Window", fixed_svc, total_reqs).await;
 
-    // 1.b. Raw Fixed Window Stress
+    // 1.b. Managed Load Shed Fixed Window Stress
+    let fixed = Arc::new(FixedWindow::new(capacity, period));
+    let fixed_svc =
+        ManagedLoadShedRateLimitLayer::new(fixed, timeout).layer(service_fn(mock_db_call));
+    run_load_test("Managed Load Shed Fixed Window", fixed_svc, total_reqs).await;
+
+    // 1.c. Raw Fixed Window Stress
     let fixed = Arc::new(FixedWindow::new(capacity, period));
     let fixed_svc = RateLimitLayer::new(fixed).layer(service_fn(mock_db_call));
     run_load_test("Raw Fixed Window", fixed_svc, total_reqs).await;
 
-    // 2.a. Managed Sliding Window Stress
+    // 2.a. Managed Retry Sliding Window Stress
     let sliding = Arc::new(SlidingWindow::new(capacity, period));
-    let sliding_svc = ManagedRateLimitLayer::new(sliding, timeout).layer(service_fn(mock_db_call));
-    run_load_test("Managed Sliding Window", sliding_svc, total_reqs).await;
+    let sliding_svc =
+        ManagedRetryRateLimitLayer::new(sliding, timeout).layer(service_fn(mock_db_call));
+    run_load_test("Managed Retry Sliding Window", sliding_svc, total_reqs).await;
 
-    // 2.b. Raw Sliding Window Stress
+    // 2.b. Managed Load Shed Sliding Window Stress
+    let sliding = Arc::new(SlidingWindow::new(capacity, period));
+    let sliding_svc =
+        ManagedLoadShedRateLimitLayer::new(sliding, timeout).layer(service_fn(mock_db_call));
+    run_load_test("Managed Load Shed Sliding Window", sliding_svc, total_reqs).await;
+
+    // 2.c. Raw Sliding Window Stress
     let sliding = Arc::new(SlidingWindow::new(capacity, period));
     let sliding_svc = RateLimitLayer::new(sliding).layer(service_fn(mock_db_call));
     run_load_test("Raw Sliding Window", sliding_svc, total_reqs).await;
 
-    // 3.a. Managed Token Bucket Stress
+    // 3.a. Managed Retry Token Bucket Stress
     let bucket = Arc::new(TokenBucket::new(capacity, increment, period));
-    let bucket_svc = ManagedRateLimitLayer::new(bucket, timeout).layer(service_fn(mock_db_call));
-    run_load_test("Managed Token Bucket", bucket_svc, total_reqs).await;
+    let bucket_svc =
+        ManagedRetryRateLimitLayer::new(bucket, timeout).layer(service_fn(mock_db_call));
+    run_load_test("Managed Retry Token Bucket", bucket_svc, total_reqs).await;
 
-    // 3.b. Raw Token Bucket Stress
+    // 3.b. Managed Load Shed Token Bucket Stress
+    let bucket = Arc::new(TokenBucket::new(capacity, increment, period));
+    let bucket_svc =
+        ManagedLoadShedRateLimitLayer::new(bucket, timeout).layer(service_fn(mock_db_call));
+    run_load_test("Managed Load Shed Token Bucket", bucket_svc, total_reqs).await;
+
+    // 3.c. Raw Token Bucket Stress
     let bucket = Arc::new(TokenBucket::new(capacity, increment, period));
     let bucket_svc = RateLimitLayer::new(bucket).layer(service_fn(mock_db_call));
     run_load_test("Raw Token Bucket", bucket_svc, total_reqs).await;
 
-    // 4.a. Managed Gcra Stress
+    // 4.a. Managed Retry Gcra Stress
     let bucket = Arc::new(Gcra::new(capacity, period));
-    let bucket_svc = ManagedRateLimitLayer::new(bucket, timeout).layer(service_fn(mock_db_call));
-    run_load_test("Managed Gcra", bucket_svc, total_reqs).await;
+    let bucket_svc =
+        ManagedRetryRateLimitLayer::new(bucket, timeout).layer(service_fn(mock_db_call));
+    run_load_test("Managed Retry Gcra", bucket_svc, total_reqs).await;
 
-    // 4.b. Raw Gcra Stress
+    // 4.b. Managed Load Shed Gcra Stress
+    let bucket = Arc::new(Gcra::new(capacity, period));
+    let bucket_svc =
+        ManagedLoadShedRateLimitLayer::new(bucket, timeout).layer(service_fn(mock_db_call));
+    run_load_test("Managed Load Shed Gcra", bucket_svc, total_reqs).await;
+
+    // 4.c. Raw Gcra Stress
     let gcra = Arc::new(Gcra::new(capacity, period));
     let gcra_svc = RateLimitLayer::new(gcra).layer(service_fn(mock_db_call));
     run_load_test("Raw Gcra", gcra_svc, total_reqs).await;

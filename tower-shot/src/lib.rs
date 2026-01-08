@@ -5,15 +5,17 @@
 //!
 //! ## The Managed Stack
 //! Unlike raw rate limiters that return `Poll::Pending` when full, this crate provides
-//! the [`ManagedRateLimitLayer`]. This is a pre-composed stack designed to handle
-//! common production requirements:
+//! "managed" layers. These are pre-composed stacks designed to handle common production requirements:
 //!
-//! 1. **Load Shedding**: Immediately rejects requests with `ShotError::Overloaded`
-//!    if the service is at peak capacity, preventing memory exhaustion.
-//! 2. **Timeouts**: Queues requests until the provided [`shot_limit::Strategy`] allows them,
-//!    failing with `ShotError::Timeout` if the wait exceeds a defined duration.
-//! 3. **Error Mapping**: Automatically converts internal Tower errors (like
-//!    `tower::timeout::error::Elapsed`) into a unified, cloneable [`ShotError`] domain.
+//! 1. **[`ManagedRetryRateLimitLayer`]**: Maximizes throughput by retrying requests that are
+//!    rate-limited, within a hard timeout.
+//! 2. **[`ManagedLoadShedRateLimitLayer`]**: Immediately rejects requests with `ShotError::Overloaded`
+//!    if the rate limit is reached, preventing memory exhaustion.
+//!
+//! Both layers also provide:
+//! - **Timeouts**: Bounded execution time for the entire request process.
+//! - **Error Mapping**: Automatically converts internal Tower errors (like
+//!   `tower::timeout::error::Elapsed`) into a unified, cloneable [`ShotError`] domain.
 //!
 //! ## Feature Flags
 //!
@@ -31,8 +33,9 @@ mod tests;
 #[cfg(doc)]
 use shot_limit::Strategy;
 
-// ... your code ...
 pub use error::ShotError;
 pub use layer::RateLimitLayer;
-pub use managed_layer::ManagedRateLimitLayer;
+pub use managed_layer::{
+    ManagedLoadShedRateLimitLayer, ManagedRateLimitLayer, ManagedRetryRateLimitLayer,
+};
 pub use service::RateLimitService;
