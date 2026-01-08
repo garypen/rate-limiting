@@ -23,9 +23,12 @@
 //!   to HTTP status codes (408, 503, 500).
 
 mod error;
+mod latency_layer;
 mod layer;
-mod managed_layer;
+mod retrylimit_layer;
+mod retrylimit_service;
 mod service;
+mod throughput_layer;
 
 #[cfg(test)]
 mod tests;
@@ -34,6 +37,7 @@ mod tests;
 use shot_limit::Strategy;
 
 pub use error::ShotError;
+pub use latency_layer::ManagedLatencyLayer;
 pub use layer::RateLimitLayer;
-pub use managed_layer::{ManagedLatencyLayer, ManagedThroughputLayer};
 pub use service::RateLimitService;
+pub use throughput_layer::ManagedThroughputLayer;

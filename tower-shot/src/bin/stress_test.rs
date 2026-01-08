@@ -103,9 +103,12 @@ where
                         ShotError::RateLimited { .. } => rejections.sheds += 1,
                         ShotError::Inner(_) => rejections.inner += 1,
                     }
-                } else if let Some(_) = e.downcast_ref::<tower::timeout::error::Elapsed>() {
+                } else if e.downcast_ref::<tower::timeout::error::Elapsed>().is_some() {
                     rejections.timeouts += 1;
-                } else if let Some(_) = e.downcast_ref::<tower::load_shed::error::Overloaded>() {
+                } else if e
+                    .downcast_ref::<tower::load_shed::error::Overloaded>()
+                    .is_some()
+                {
                     rejections.sheds += 1;
                 } else {
                     rejections.unknown += 1;
