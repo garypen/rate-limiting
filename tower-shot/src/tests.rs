@@ -255,7 +255,7 @@ async fn test_managed_layer_cloning_concurrency() {
     );
 
     // Create the Managed Layer (Wait up to 100ms before failing)
-    let layer = ManagedRateLimitLayer::new(Arc::new(limiter), Duration::from_millis(100));
+    let layer = ManagedThroughputLayer::new(Arc::new(limiter), Duration::from_millis(100));
 
     let mock_count = Arc::new(AtomicUsize::new(0));
     let service = ServiceBuilder::new().layer(layer).service(MockService {
@@ -306,7 +306,7 @@ async fn test_managed_layer_error_type() {
     );
 
     // Short timeout
-    let layer = ManagedRateLimitLayer::new(Arc::new(limiter), Duration::from_millis(10));
+    let layer = ManagedThroughputLayer::new(Arc::new(limiter), Duration::from_millis(10));
 
     let mock_count = Arc::new(AtomicUsize::new(0));
     let service = ServiceBuilder::new().layer(layer).service(MockService {
@@ -324,7 +324,7 @@ async fn test_managed_layer_error_type() {
 
     if let Some(shot_err) = err.downcast_ref::<ShotError>() {
         match shot_err {
-            ShotError::Timeout => {}, // Good
+            ShotError::Timeout => {} // Good
             _ => panic!("Expected ShotError::Timeout, got {:?}", shot_err),
         }
     } else {
@@ -333,15 +333,15 @@ async fn test_managed_layer_error_type() {
 }
 
 #[tokio::test]
-async fn test_managed_load_shed_layer_error_type() {
+async fn test_managed_latency_layer_error_type() {
     let capacity = 1;
     let limiter = FixedWindow::new(
         NonZeroUsize::new(capacity).unwrap(),
         Duration::from_secs(60),
     );
 
-    // Short timeout (doesn't really matter for LoadShed if it hits immediately)
-    let layer = ManagedLoadShedRateLimitLayer::new(Arc::new(limiter), Duration::from_millis(100));
+    // Short timeout (doesn't really matter for Latency if it hits immediately)
+    let layer = ManagedLatencyLayer::new(Arc::new(limiter), Duration::from_millis(100));
 
     let mock_count = Arc::new(AtomicUsize::new(0));
     let service = ServiceBuilder::new().layer(layer).service(MockService {
@@ -359,7 +359,7 @@ async fn test_managed_load_shed_layer_error_type() {
 
     if let Some(shot_err) = err.downcast_ref::<ShotError>() {
         match shot_err {
-            ShotError::Overloaded => {}, // Good
+            ShotError::Overloaded => {} // Good
             _ => panic!("Expected ShotError::Overloaded, got {:?}", shot_err),
         }
     } else {

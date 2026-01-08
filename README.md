@@ -15,8 +15,8 @@ This project is split into three specialized crates:
 **Shot** was created to provide a flexible rate-limiting solution for Rust applications, focusing on configurability, performance, and eliminating buffer bloat.
 
 It offers several `tower` layers to suit different needs:
- - `ManagedRetryRateLimitLayer`: (Default `ManagedRateLimitLayer`) Maximizes throughput by retrying requests within a timeout.
- - `ManagedLoadShedRateLimitLayer`: Provides aggressive load shedding to protect service latency.
+ - `ManagedThroughputLayer`: Maximizes throughput by retrying requests within a timeout.
+ - `ManagedLatencyLayer`: Provides aggressive load shedding to protect service latency.
  - `RateLimitLayer`: A drop-in replacement for the existing `tower` rate-limiting layer, designed for maximum performance.
 
 ## Performance & Scaling

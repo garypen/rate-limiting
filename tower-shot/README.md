@@ -56,7 +56,7 @@ Configuring and using `tower-shot` is both simpler, since buffer is not required
 
 ```rust
 let fixed = Arc::new(FixedWindow::new(capacity, period));
-let fixed_layer = ManagedRetryRateLimitLayer::new(fixed, timeout);
+let fixed_layer = ManagedThroughputLayer::new(fixed, timeout);
 let tower_svc = ServiceBuilder::new()
     .timeout(timeout)
     .layer(fixed_layer)
@@ -95,7 +95,7 @@ tokio = { version = "1.48.0", features = ["full"] }
 
 ## Quick Start
 
-The following example demonstrates how to set up a `ManagedRetryRateLimitLayer` using a `TokenBucket` strategy in an Axum application. 
+The following example demonstrates how to set up a `ManagedThroughputLayer` using a `TokenBucket` strategy in an Axum application. 
 
 
 
@@ -110,7 +110,7 @@ use axum::routing::get;
 use shot_limit::TokenBucket;
 use tower::BoxError;
 use tower::ServiceBuilder;
-use tower_shot::ManagedRetryRateLimitLayer;
+use tower_shot::ManagedThroughputLayer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -123,9 +123,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let strategy = Arc::new(TokenBucket::new(capacity, refill_amount, period));
 
     // 2. Configure the managed layer with a 500ms timeout
-    // ManagedRetryRateLimitLayer handles retries and timeouts automatically.
+    // ManagedThroughputLayer handles retries and timeouts automatically.
     let timeout = Duration::from_millis(500);
-    let managed_layer = ManagedRetryRateLimitLayer::new(strategy, timeout);
+    let managed_layer = ManagedThroughputLayer::new(strategy, timeout);
 
     // 3. Build the Axum router
     let app = Router::new()
@@ -159,7 +159,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 
 
-| Feature | `RateLimitLayer` | `ManagedRetryRateLimitLayer` | `ManagedLoadShedRateLimitLayer` |
+| Feature | `RateLimitLayer` | `ManagedThroughputLayer` | `ManagedLatencyLayer` |
 | :--- | :--- | :--- | :--- |
 | **Strategy** | Any `shot-limit` | Any `shot-limit` | Any `shot-limit` |
 | **Failure Mode** | Return `Poll::Pending` | Retries, then `ShotError::Timeout` | Immediate `ShotError::Overloaded` |
@@ -169,10 +169,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #### When to use `RateLimitLayer`
 The absolute fastest path. Ideal for internal microservices where the client handles backoff. Note: You will need to decide how to handle `Poll::Pending` yourself.
 
-#### When to use `ManagedRetryRateLimitLayer` (Default `ManagedRateLimitLayer`)
+#### When to use `ManagedThroughputLayer`
 Ideal for maximizing throughput. It allows requests to wait briefly (retrying) if tokens aren't immediately available, up to a hard timeout.
 
-#### When to use `ManagedLoadShedRateLimitLayer`
+#### When to use `ManagedLatencyLayer`
 Ideal for protecting services from "buffer bloat". It immediately rejects excess traffic, ensuring that the requests that *are* accepted are processed with minimal latency.
 
 ## Features

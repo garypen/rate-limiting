@@ -7,9 +7,9 @@
 //! Unlike raw rate limiters that return `Poll::Pending` when full, this crate provides
 //! "managed" layers. These are pre-composed stacks designed to handle common production requirements:
 //!
-//! 1. **[`ManagedRetryRateLimitLayer`]**: Maximizes throughput by retrying requests that are
+//! 1. **[`ManagedThroughputLayer`]**: Maximizes throughput by retrying requests that are
 //!    rate-limited, within a hard timeout.
-//! 2. **[`ManagedLoadShedRateLimitLayer`]**: Immediately rejects requests with `ShotError::Overloaded`
+//! 2. **[`ManagedLatencyLayer`]**: Immediately rejects requests with `ShotError::Overloaded`
 //!    if the rate limit is reached, preventing memory exhaustion.
 //!
 //! Both layers also provide:
@@ -35,7 +35,5 @@ use shot_limit::Strategy;
 
 pub use error::ShotError;
 pub use layer::RateLimitLayer;
-pub use managed_layer::{
-    ManagedLoadShedRateLimitLayer, ManagedRateLimitLayer, ManagedRetryRateLimitLayer,
-};
+pub use managed_layer::{ManagedLatencyLayer, ManagedThroughputLayer};
 pub use service::RateLimitService;

@@ -7,8 +7,8 @@
 //!    - TokenBucket
 //!  - RateLimiting Style
 //!    - Standard (pure rate limiting)
-//!    - Retry (ManagedRetryRateLimitLayer - builtin timeout and retries)
-//!    - LoadShed (ManagedLoadShedRateLimitLayer - builtin timeout and load-shedding)
+//!    - Throughput (ManagedThroughputLayer - builtin timeout and retries)
+//!    - Latency (ManagedLatencyLayer - builtin timeout and load-shedding)
 //!
 //! By default, you get a router which:
 //!  - Ensures that no request takes > 500ms
@@ -55,8 +55,8 @@ use shot_limit::Strategy;
 use shot_limit::TokenBucket;
 use tower::BoxError;
 use tower::ServiceBuilder;
-use tower_shot::ManagedLoadShedRateLimitLayer;
-use tower_shot::ManagedRetryRateLimitLayer;
+use tower_shot::ManagedLatencyLayer;
+use tower_shot::ManagedThroughputLayer;
 use tower_shot::RateLimitLayer;
 use tower_shot::ShotError;
 
@@ -64,7 +64,7 @@ use tower_shot::ShotError;
 enum LimiterType {
     Standard,
     Retry,
-    LoadShed,
+    Latency,
 }
 
 #[derive(ValueEnum, Clone, Debug)]
@@ -135,7 +135,7 @@ async fn main() -> Result<(), BoxError> {
             app.layer(
                 ServiceBuilder::new()
                     .layer(HandleErrorLayer::new(handle_shot_error))
-                    // Since we aren't using ManagedRateLimitLayer, we
+                    // Since we aren't using managed layer, we
                     // specify load shedding and timeout manually.
                     .timeout(args.timeout)
                     .load_shed()
@@ -144,7 +144,7 @@ async fn main() -> Result<(), BoxError> {
             )
         }
         LimiterType::Retry => {
-            let layer = ManagedRetryRateLimitLayer::new(strategy, args.timeout);
+            let layer = ManagedThroughputLayer::new(strategy, args.timeout);
             app.layer(
                 ServiceBuilder::new()
                     .layer(HandleErrorLayer::new(handle_shot_error))
@@ -152,8 +152,8 @@ async fn main() -> Result<(), BoxError> {
                     .map_err(BoxError::from),
             )
         }
-        LimiterType::LoadShed => {
-            let layer = ManagedLoadShedRateLimitLayer::new(strategy, args.timeout);
+        LimiterType::Latency => {
+            let layer = ManagedLatencyLayer::new(strategy, args.timeout);
             app.layer(
                 ServiceBuilder::new()
                     .layer(HandleErrorLayer::new(handle_shot_error))

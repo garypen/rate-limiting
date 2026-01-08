@@ -20,7 +20,7 @@ use crate::ShotError;
 /// This layer uses a retry mechanism. If the rate limit is reached, it will
 /// wait for the required duration and then retry the request, up to a
 /// maximum timeout.
-pub struct ManagedRetryRateLimitLayer<L, Req>
+pub struct ManagedThroughputLayer<L, Req>
 where
     L: ?Sized,
 {
@@ -29,7 +29,7 @@ where
     _phantom: PhantomData<fn(Req)>,
 }
 
-impl<L, Req> Clone for ManagedRetryRateLimitLayer<L, Req>
+impl<L, Req> Clone for ManagedThroughputLayer<L, Req>
 where
     L: ?Sized,
 {
@@ -42,7 +42,7 @@ where
     }
 }
 
-impl<S, L, Req> Layer<S> for ManagedRetryRateLimitLayer<L, Req>
+impl<S, L, Req> Layer<S> for ManagedThroughputLayer<L, Req>
 where
     L: Strategy + ?Sized + Send + Sync + 'static,
     S: Service<Req, Error = BoxError> + Clone + Send + Sync + 'static,
@@ -80,7 +80,7 @@ where
     }
 }
 
-impl<L, Req> ManagedRetryRateLimitLayer<L, Req>
+impl<L, Req> ManagedThroughputLayer<L, Req>
 where
     L: Strategy + ?Sized,
 {
@@ -93,11 +93,11 @@ where
     }
 }
 
-/// A high-performance, non-blocking rate limiting stack that uses load shedding.
+/// A high-performance, non-blocking rate limiting stack that prioritizes latency.
 ///
 /// This layer uses a "Shed-First" architecture. Instead of queuing requests
 /// in memory, it immediately rejects excess traffic if the rate limit is reached.
-pub struct ManagedLoadShedRateLimitLayer<L, Req>
+pub struct ManagedLatencyLayer<L, Req>
 where
     L: ?Sized,
 {
@@ -106,7 +106,7 @@ where
     _phantom: PhantomData<fn(Req)>,
 }
 
-impl<L, Req> Clone for ManagedLoadShedRateLimitLayer<L, Req>
+impl<L, Req> Clone for ManagedLatencyLayer<L, Req>
 where
     L: ?Sized,
 {
@@ -119,7 +119,7 @@ where
     }
 }
 
-impl<S, L, Req> Layer<S> for ManagedLoadShedRateLimitLayer<L, Req>
+impl<S, L, Req> Layer<S> for ManagedLatencyLayer<L, Req>
 where
     L: Strategy + ?Sized + Send + Sync + 'static,
     S: Service<Req, Error = BoxError> + Clone + Send + Sync + 'static,
@@ -158,7 +158,7 @@ where
     }
 }
 
-impl<L, Req> ManagedLoadShedRateLimitLayer<L, Req>
+impl<L, Req> ManagedLatencyLayer<L, Req>
 where
     L: Strategy + ?Sized,
 {
@@ -170,9 +170,6 @@ where
         }
     }
 }
-
-// Keep ManagedRateLimitLayer as an alias for ManagedRetryRateLimitLayer for backward compatibility
-pub type ManagedRateLimitLayer<L, Req> = ManagedRetryRateLimitLayer<L, Req>;
 
 #[derive(Clone)]
 struct RateLimitRetryLayer;

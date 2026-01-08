@@ -6,8 +6,8 @@ use tower::Service;
 use tower::ServiceExt;
 
 use shot_limit::TokenBucket;
-use tower_shot::ManagedLoadShedRateLimitLayer;
-use tower_shot::ManagedRetryRateLimitLayer;
+use tower_shot::ManagedLatencyLayer;
+use tower_shot::ManagedThroughputLayer;
 use tower_shot::ShotError;
 
 #[tokio::main]
@@ -32,12 +32,12 @@ async fn main() {
     println!("Strategy: TokenBucket (Cap: 10, Refill: 1/100ms)");
     println!("Budget: 500ms wait\n");
 
-    println!("---\n--- Testing ManagedRetryRateLimitLayer (Maximizes throughput) ---");
-    run_stress(ManagedRetryRateLimitLayer::new(bucket.clone(), max_wait).layer(service.clone()))
+    println!("---\n--- Testing ManagedThroughputLayer (Maximizes throughput) ---");
+    run_stress(ManagedThroughputLayer::new(bucket.clone(), max_wait).layer(service.clone()))
         .await;
 
-    println!("\n--- Testing ManagedLoadShedRateLimitLayer (Prioritizes latency) ---");
-    run_stress(ManagedLoadShedRateLimitLayer::new(bucket, max_wait).layer(service)).await;
+    println!("\n--- Testing ManagedLatencyLayer (Prioritizes latency) ---");
+    run_stress(ManagedLatencyLayer::new(bucket, max_wait).layer(service)).await;
 
     println!("\n🏁 Stress test complete.");
 }
