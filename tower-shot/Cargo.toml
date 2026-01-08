@@ -7,6 +7,8 @@ repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
 edition.workspace = true
+categories = ["concurrency", "algorithms"]
+description = "A high-performance, atomic-backed rate limiting middleware for `tower`"
 
 [features]
 default = []
@@ -15,6 +17,7 @@ axum = ["dep:axum", "dep:http"]
 
 [dependencies]
 hdrhistogram = "7.5.4"
+rand = "0.9"
 shot-limit = { version = "0.1.0", path = "../shot-limit" }
 thiserror = "2.0.17"
 tokio.workspace = true

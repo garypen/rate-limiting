@@ -21,11 +21,12 @@ use tower::ServiceBuilder;
 use tower::ServiceExt;
 
 use super::*;
+use crate::error::ShotError;
 
 use futures::future::Ready;
 use futures::future::ready;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct MockService {
     pub count: Arc<AtomicUsize>,
 }
@@ -294,4 +295,139 @@ async fn test_managed_layer_cloning_concurrency() {
         capacity,
         "Inner service should only see 5 hits"
     );
+}
+
+#[tokio::test]
+async fn test_managed_layer_error_type() {
+    let capacity = 1;
+    let limiter = FixedWindow::new(
+        NonZeroUsize::new(capacity).unwrap(),
+        Duration::from_secs(60),
+    );
+
+    // Short timeout
+    let layer = ManagedRateLimitLayer::new(Arc::new(limiter), Duration::from_millis(10));
+
+    let mock_count = Arc::new(AtomicUsize::new(0));
+    let service = ServiceBuilder::new().layer(layer).service(MockService {
+        count: mock_count.clone(),
+    });
+
+    let mut svc1 = service.clone();
+    let mut svc2 = service.clone();
+
+    // 1. First request succeeds
+    svc1.ready().await.unwrap().call(()).await.unwrap();
+
+    // 2. Second request should retry then timeout
+    let err = svc2.ready().await.unwrap().call(()).await.unwrap_err();
+
+    if let Some(shot_err) = err.downcast_ref::<ShotError>() {
+        match shot_err {
+            ShotError::Timeout => {}, // Good
+            _ => panic!("Expected ShotError::Timeout, got {:?}", shot_err),
+        }
+    } else {
+        panic!("Expected ShotError, got {:?}", err);
+    }
+}
+
+#[derive(Clone)]
+struct ManualService {
+    ready: Arc<std::sync::Mutex<bool>>,
+    waker: Arc<std::sync::Mutex<Option<std::task::Waker>>>,
+}
+
+impl ManualService {
+    fn new() -> Self {
+        Self {
+            ready: Arc::new(std::sync::Mutex::new(false)),
+            waker: Arc::new(std::sync::Mutex::new(None)),
+        }
+    }
+
+    fn set_ready(&self) {
+        *self.ready.lock().unwrap() = true;
+        if let Some(waker) = self.waker.lock().unwrap().take() {
+            waker.wake();
+        }
+    }
+}
+
+impl Service<()> for ManualService {
+    type Response = ();
+    type Error = BoxError;
+    type Future = Ready<Result<Self::Response, Self::Error>>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        if *self.ready.lock().unwrap() {
+            Poll::Ready(Ok(()))
+        } else {
+            *self.waker.lock().unwrap() = Some(cx.waker().clone());
+            Poll::Pending
+        }
+    }
+
+    fn call(&mut self, _req: ()) -> Self::Future {
+        ready(Ok(()))
+    }
+}
+
+#[tokio::test]
+async fn test_poll_ready_double_spend() {
+    let limiter = FixedWindow::new(NonZeroUsize::new(1).unwrap(), Duration::from_secs(3600));
+    let inner = ManualService::new();
+    let mut service = RateLimitService::new(inner.clone(), Arc::new(limiter));
+
+    // 1. First poll. Inner is pending.
+    // Limiter consumes 1 token. Remaining: 0.
+    // Returns Pending.
+    assert!(futures::poll!(service.ready()).is_pending());
+
+    // 2. Make inner ready.
+    inner.set_ready();
+
+    // 3. Second poll.
+    // If bug: Limiter consumes 1 token. Remaining: -1. Returns Pending (Overloaded).
+    // If fix: Uses cached permit. Returns Ready.
+
+    // We expect it to be ready immediately.
+    // Using a timeout to fail fast if it hangs.
+    let result = tokio::time::timeout(Duration::from_millis(100), service.ready()).await;
+
+    assert!(
+        result.is_ok(),
+        "Service timed out (likely hung due to double spend)"
+    );
+    assert!(result.unwrap().is_ok());
+}
+
+#[tokio::test]
+async fn test_fail_fast() {
+    // This test verifies that if we enable fail_fast, we get an error instead of sleeping.
+    let capacity = NonZeroUsize::new(1).unwrap();
+    let interval = Duration::from_secs(60);
+    let strategy = FixedWindow::new(capacity, interval);
+
+    let mock = MockService {
+        count: Arc::new(AtomicUsize::new(0)),
+    };
+
+    // Create service with fail_fast = true
+    let mut service = RateLimitService::new(mock, Arc::new(strategy)).with_fail_fast(true);
+
+    // 1. First call should succeed
+    service.ready().await.unwrap().call(()).await.unwrap();
+
+    // 2. Second call should fail immediately
+    let err = service.ready().await.expect_err("Should fail fast");
+
+    // Verify it is ShotError::RateLimited
+    match err.downcast_ref::<ShotError>() {
+        Some(ShotError::RateLimited { retry_after }) => {
+            assert!(*retry_after > Duration::from_secs(0));
+            assert!(*retry_after <= Duration::from_secs(60));
+        }
+        _ => panic!("Expected ShotError::RateLimited, got {:?}", err),
+    }
 }

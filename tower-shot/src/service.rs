@@ -3,7 +3,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::Context;
 use std::task::Poll;
-use std::time::Duration;
 
 use tokio::time::Sleep;
 use tokio::time::sleep;
@@ -13,6 +12,9 @@ use tower::Service;
 use shot_limit::Reason;
 use shot_limit::Strategy;
 
+use crate::error::ShotError;
+
+#[derive(Debug)]
 pub struct RateLimitService<L, S>
 where
     L: ?Sized,
@@ -20,6 +22,8 @@ where
     inner: S,
     limiter: Arc<L>,
     sleep: Option<Pin<Box<Sleep>>>,
+    permit_acquired: bool,
+    fail_fast: bool,
 }
 
 // Manually implement Clone because Pin<Box<Sleep>> cannot be cloned
@@ -34,6 +38,8 @@ where
             limiter: Arc::clone(&self.limiter),
             // We start with a fresh sleep state for the new clone
             sleep: None,
+            permit_acquired: false,
+            fail_fast: self.fail_fast,
         }
     }
 }
@@ -56,33 +62,47 @@ where
                 Poll::Pending => return Poll::Pending,
             }
         }
-        // 2. Check the strategy
-        match self.limiter.process() {
-            ControlFlow::Continue(_) => self.inner.poll_ready(cx),
-            ControlFlow::Break(reason) => {
-                let Reason::Overloaded { retry_after } = reason;
 
-                let delay = retry_after + Duration::from_millis(1);
-                let mut sleep_fut = Box::pin(sleep(delay));
+        // 2. Check inner service readiness FIRST to avoid over-consuming tokens
+        match self.inner.poll_ready(cx) {
+            Poll::Pending => return Poll::Pending,
+            Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+            Poll::Ready(Ok(())) => {}
+        }
 
-                // Important: Poll it to register the waker from 'cx'
-                match sleep_fut.as_mut().poll(cx) {
-                    Poll::Pending => {
-                        self.sleep = Some(sleep_fut);
-                        Poll::Pending
+        // 3. Check the strategy if we don't have a permit yet
+        if !self.permit_acquired {
+            match self.limiter.process() {
+                ControlFlow::Continue(_) => {
+                    self.permit_acquired = true;
+                }
+                ControlFlow::Break(reason) => {
+                    let Reason::Overloaded { retry_after } = reason;
+
+                    if self.fail_fast {
+                        return Poll::Ready(Err(Box::new(ShotError::RateLimited { retry_after })));
                     }
-                    Poll::Ready(_) => {
-                        // If it's already ready (rare but possible),
-                        // recurse or simply notify the caller to try again immediately.
-                        cx.waker().wake_by_ref();
-                        Poll::Pending
+
+                    let mut sleep_fut = Box::pin(sleep(retry_after));
+                    match sleep_fut.as_mut().poll(cx) {
+                        Poll::Pending => {
+                            self.sleep = Some(sleep_fut);
+                            return Poll::Pending;
+                        }
+                        Poll::Ready(_) => {
+                            cx.waker().wake_by_ref();
+                            return Poll::Pending;
+                        }
                     }
                 }
             }
         }
+
+        Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, req: Req) -> Self::Future {
+        self.permit_acquired = false;
         self.inner.call(req)
     }
 }
@@ -96,6 +116,13 @@ where
             inner,
             limiter,
             sleep: None,
+            permit_acquired: false,
+            fail_fast: false,
         }
+    }
+
+    pub fn with_fail_fast(mut self, fail_fast: bool) -> Self {
+        self.fail_fast = fail_fast;
+        self
     }
 }

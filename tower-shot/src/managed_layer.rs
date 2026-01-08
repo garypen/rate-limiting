@@ -1,11 +1,15 @@
+use std::future::Future;
 use std::marker::PhantomData;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use shot_limit::Strategy;
 use tower::BoxError;
 use tower::Layer;
 use tower::Service;
+use tower::ServiceExt;
 use tower::util::BoxCloneSyncService;
 
 use crate::RateLimitService;
@@ -59,12 +63,16 @@ where
     type Service = BoxCloneSyncService<Req, S::Response, BoxError>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        let rl = RateLimitService::new(inner, self.limiter.clone());
+        // Enable fail_fast so RateLimitService returns error immediately
+        let rl = RateLimitService::new(inner, self.limiter.clone()).with_fail_fast(true);
 
         // Timeout is outer to ensure a hard deadline on the entire process.
+        // RateLimitRetryLayer handles the retries when RateLimited.
+        // LoadShed is used to provide backpressure when the inner service is busy.
         let svc = tower::ServiceBuilder::new()
             .timeout(self.max_wait)
-            .load_shed()
+            .layer(RateLimitRetryLayer)
+            // .load_shed()
             .service(rl);
 
         // Map the mixed errors into ShotError
@@ -73,8 +81,9 @@ where
                 BoxError::from(ShotError::Timeout)
             } else if err.is::<tower::load_shed::error::Overloaded>() {
                 BoxError::from(ShotError::Overloaded)
-            } else if err.is::<ShotError>() {
-                err
+            } else if let Some(shot_err) = err.downcast_ref::<ShotError>() {
+                // Propagate ShotError as is
+                BoxError::from(shot_err.clone())
             } else {
                 // Wrap any other inner service errors
                 Box::from(ShotError::Inner(err.to_string()))
@@ -95,5 +104,85 @@ where
             max_wait,
             _phantom: PhantomData,
         }
+    }
+}
+
+#[derive(Clone)]
+struct RateLimitRetryLayer;
+
+impl<S> Layer<S> for RateLimitRetryLayer {
+    type Service = RateLimitRetryService<S>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        RateLimitRetryService { inner }
+    }
+}
+
+struct RateLimitRetryService<S> {
+    inner: S,
+}
+
+impl<S: Clone> Clone for RateLimitRetryService<S> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+impl<S, Req> Service<Req> for RateLimitRetryService<S>
+where
+    S: Service<Req, Error = BoxError> + Clone + Send + 'static,
+    S::Future: Send + 'static,
+    S::Response: 'static,
+    Req: Send + 'static,
+{
+    type Response = S::Response;
+    type Error = BoxError;
+    // We return a BoxFuture because we are creating an async block
+    type Future = Pin<Box<dyn Future<Output = Result<S::Response, S::Error>> + Send>>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        match self.inner.poll_ready(cx) {
+            Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
+            Poll::Ready(Err(err)) => {
+                // Check if it's a RateLimited error
+                if let Some(shot_err) = err.downcast_ref::<ShotError>() {
+                    if let ShotError::RateLimited { .. } = shot_err {
+                        // Pretend we are ready, so call() gets invoked.
+                        // We will handle the retry logic (and sleep) inside call().
+                        return Poll::Ready(Ok(()));
+                    }
+                }
+                Poll::Ready(Err(err))
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    fn call(&mut self, req: Req) -> Self::Future {
+        let clone = self.inner.clone();
+        let mut inner = std::mem::replace(&mut self.inner, clone);
+
+        Box::pin(async move {
+            loop {
+                match inner.ready().await {
+                    Ok(svc) => {
+                        return svc.call(req).await;
+                    }
+                    Err(err) => {
+                        if let Some(shot_err) = err.downcast_ref::<ShotError>() {
+                            if let ShotError::RateLimited { retry_after } = shot_err {
+                                // Wait before retrying
+                                tokio::time::sleep(*retry_after).await;
+                                continue;
+                            }
+                        }
+                        // Propagate other errors
+                        return Err(err);
+                    }
+                }
+            }
+        })
     }
 }
