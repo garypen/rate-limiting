@@ -1,7 +1,10 @@
 use std::hint::black_box;
 use std::num::NonZeroU32;
 use std::num::NonZeroUsize;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::Context;
+use std::task::Poll;
 use std::time::Duration;
 
 use criterion::BenchmarkGroup;
@@ -15,12 +18,19 @@ use futures::stream::StreamExt;
 use governor::Quota;
 use governor::RateLimiter;
 use governor::clock::Clock;
+use governor::clock::DefaultClock;
+use governor::clock::QuantaClock;
+use governor::middleware::NoOpMiddleware;
+use governor::state::InMemoryState;
+use governor::state::NotKeyed;
 use http::Request;
 use http::Response;
 use shot_limit::FixedWindow;
 use shot_limit::Gcra;
 use shot_limit::SlidingWindow;
 use shot_limit::TokenBucket;
+use tokio::time::Sleep;
+use tokio::time::sleep;
 use tower::BoxError;
 use tower::Service;
 use tower::ServiceBuilder;
@@ -89,20 +99,11 @@ fn bench_burst(
 
 // --- GOVERNOR ADAPTER ---
 
-use governor::clock::DefaultClock;
-use governor::middleware::NoOpMiddleware;
-use governor::state::InMemoryState;
-use governor::state::NotKeyed;
-use std::pin::Pin;
-use std::task::Context;
-use std::task::Poll;
-use tokio::time::Sleep;
-use tokio::time::sleep;
-
 struct GovernorService<S> {
     inner: S,
     limiter: Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>>,
     sleep: Option<Pin<Box<Sleep>>>,
+    clock: QuantaClock,
 }
 
 impl<S> Clone for GovernorService<S>
@@ -114,6 +115,7 @@ where
             inner: self.inner.clone(),
             limiter: self.limiter.clone(),
             sleep: None,
+            clock: self.clock.clone(),
         }
     }
 }
@@ -146,7 +148,7 @@ where
         match self.limiter.check() {
             Ok(_) => Poll::Ready(Ok(())),
             Err(negative) => {
-                let wait: Duration = negative.wait_time_from(DefaultClock::default().now());
+                let wait: Duration = negative.wait_time_from(self.clock.now());
                 let mut sleep_fut = Box::pin(sleep(wait));
                 match sleep_fut.as_mut().poll(cx) {
                     Poll::Pending => {
@@ -192,12 +194,13 @@ fn bench_all_scenarios(c: &mut Criterion) {
     let bucket = Arc::new(TokenBucket::new(capacity, increment, period));
     let gcra = Arc::new(Gcra::new(capacity, period));
     let governor = Arc::new(RateLimiter::direct(Quota::per_second(
-        NonZeroU32::new(increment_u.try_into().unwrap()).unwrap(),
+        NonZeroU32::new(<usize as TryInto<u32>>::try_into(increment_u).unwrap() * 1_000).unwrap(),
     )));
 
     // 2. Define Scenarios (ID, Service)
     // This makes adding new strategies or layers trivial.
     let scenarios: Vec<(&str, BenchService)> = vec![
+        /*
         (
             "shot_standard_fixed",
             BoxCloneSyncService::new(
@@ -222,6 +225,7 @@ fn bench_all_scenarios(c: &mut Criterion) {
                     .service(service_fn(noop_handler)),
             ),
         ),
+        */
         (
             "shot_standard_gcra",
             BoxCloneSyncService::new(
@@ -235,6 +239,7 @@ fn bench_all_scenarios(c: &mut Criterion) {
                 inner: service_fn(noop_handler),
                 limiter: governor.clone(),
                 sleep: None,
+                clock: DefaultClock::default(),
             })
         }),
         (
@@ -246,6 +251,7 @@ fn bench_all_scenarios(c: &mut Criterion) {
                     .service(service_fn(noop_handler)),
             ),
         ),
+        /*
         (
             "shot_managed_throughput_fixed",
             BoxCloneSyncService::new(
@@ -294,6 +300,7 @@ fn bench_all_scenarios(c: &mut Criterion) {
                     .service(service_fn(noop_handler)),
             ),
         ),
+        */
         (
             "shot_managed_throughput_gcra",
             BoxCloneSyncService::new(
@@ -312,16 +319,12 @@ fn bench_all_scenarios(c: &mut Criterion) {
         ),
         ("managed_governor", {
             BoxCloneSyncService::new(ServiceBuilder::new().timeout(timeout).load_shed().service(
-                service_fn(move |req| {
-                    let limiter = governor.clone();
-                    async move {
-                        if limiter.check().is_ok() {
-                            noop_handler(req).await
-                        } else {
-                            Err("Rate limited".into())
-                        }
-                    }
-                }),
+                GovernorService {
+                    inner: service_fn(noop_handler),
+                    limiter: governor,
+                    sleep: None,
+                    clock: DefaultClock::default(),
+                },
             ))
         }),
         (

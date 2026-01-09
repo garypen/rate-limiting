@@ -36,10 +36,10 @@ These strategies scale efficiently, maintaining high performance under multi-thr
 
 ### `tower-shot` (Middleware)
 `tower-shot` introduces minimal overhead while providing robust rate-limiting middleware.
-- **Standard `tower-shot` Layer:** ~108 ns latency, offering a significant speedup (~50x faster) compared to `tower::limit::RateLimit` (~5,874 ns).
-- **Managed `tower-shot` Layer:** ~200-227 ns latency, providing advanced features like timeouts and load shedding while remaining highly performant.
+- **Standard `tower-shot` Layer:** ~108 ns latency, offering a significant speedup (~50x faster) compared to `tower::limit::RateLimit` (~5,560 ns).
+- **Managed `tower-shot` Layer:** ~192-226 ns latency, providing advanced features like timeouts and load shedding while remaining highly performant.
 
-When compared against `governor` in a fully Tower-compliant "Wait-until-Ready" configuration, `tower-shot` is **~100x faster** (~108 ns vs ~9,987 ns).
+When compared against `governor` in a fully Tower-compliant "Wait-until-Ready" configuration, `tower-shot` performs **on par** (~108 ns vs ~110 ns), while maintaining its advantage over the native Tower implementation.
 
 Under high contention (1,000 concurrent tasks), `tower-shot` layers maintain excellent performance, with the Standard layer processing requests in approximately 169 µs. For full details, see [`tower-shot/README.md`](./tower-shot/README.md).
 

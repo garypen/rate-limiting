@@ -56,24 +56,22 @@ where
         // Timeout is outer to ensure a hard deadline on the entire process.
         // RateLimitRetryLayer handles the retries when RateLimited.
         let svc = tower::ServiceBuilder::new()
+            .map_err(|err: BoxError| {
+                if err.is::<tower::timeout::error::Elapsed>() {
+                    BoxError::from(ShotError::Timeout)
+                } else if let Some(shot_err) = err.downcast_ref::<ShotError>() {
+                    // Propagate ShotError as is
+                    BoxError::from(shot_err.clone())
+                } else {
+                    // Wrap any other inner service errors
+                    Box::from(ShotError::Inner(err.to_string()))
+                }
+            })
             .timeout(self.max_wait)
             .layer(RateLimitRetryLayer)
             .service(rl);
 
-        // Map the mixed errors into ShotError
-        let mapped_svc = tower::util::MapErr::new(svc, |err: BoxError| {
-            if err.is::<tower::timeout::error::Elapsed>() {
-                BoxError::from(ShotError::Timeout)
-            } else if let Some(shot_err) = err.downcast_ref::<ShotError>() {
-                // Propagate ShotError as is
-                BoxError::from(shot_err.clone())
-            } else {
-                // Wrap any other inner service errors
-                Box::from(ShotError::Inner(err.to_string()))
-            }
-        });
-
-        BoxCloneSyncService::new(mapped_svc)
+        BoxCloneSyncService::new(svc)
     }
 }
 
