@@ -89,14 +89,15 @@ fn bench_burst(
 
 // --- GOVERNOR ADAPTER ---
 
+use governor::clock::DefaultClock;
 use governor::middleware::NoOpMiddleware;
 use governor::state::InMemoryState;
-use governor::clock::DefaultClock;
 use governor::state::NotKeyed;
+use std::pin::Pin;
+use std::task::Context;
+use std::task::Poll;
 use tokio::time::Sleep;
 use tokio::time::sleep;
-use std::pin::Pin;
-use std::task::{Context, Poll};
 
 struct GovernorService<S> {
     inner: S,
