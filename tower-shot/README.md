@@ -164,7 +164,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 | **Strategy** | Any `shot-limit` | Any `shot-limit` | Any `shot-limit` |
 | **Failure Mode** | Return `Poll::Pending` | Retries, then `ShotError::Timeout` | Immediate `ShotError::Overloaded` |
 | **Best For** | Internal microservices | User-facing APIs (Max Throughput) | Critical Load Protection |
-| **Overhead** | ~108 ns | ~226 ns | ~192 ns |
 
 #### When to use `RateLimitLayer`
 The absolute fastest path. Ideal for internal microservices where the client handles backoff. Note: You will need to decide how to handle `Poll::Pending` yourself.
@@ -202,7 +201,7 @@ Tower Shot categorizes failures so your clients can react appropriately without 
 
 ## Performance
 
-`tower-shot` is designed for high-throughput services where middleware overhead must be kept to an absolute minimum. In our benchmarks, `tower-shot` consistently outperforms the native Tower implementation by a factor of **~50x** and performs on par with `governor` when used in a fully Tower-compliant "Wait-based" configuration.
+`tower-shot` is designed for high-throughput services where middleware overhead must be kept to an absolute minimum. In our benchmarks, `tower-shot`'s Managed layers outperform the native Tower implementation by a factor of **~450x** in load-shedding scenarios and **~45x** under high contention, while performing on par with `governor`.
 
 ### Benchmarks
 
@@ -218,18 +217,18 @@ cargo bench
 cargo run --bin stress_test --release
 ```
 
-### Latency Comparison
+### Latency Comparison (Saturated Load)
 
-The following table shows the raw overhead introduced by the middleware for a single request (Lower is better):
+The following table shows the behavior of the middleware when the system is fully saturated (10,000 req/s capacity).
 
-| Implementation | Latency (ns) | Relative Speed |
+| Implementation | Latency | Behavior |
 |:---|:---:|:---:|
-| `tower::limit::RateLimit` | 5,560 ns | 1x |
-| `governor` (Wait Adapter) | 110 ns | 50x faster |
-| **`tower-shot` (Standard)** | **108 ns** | **51x faster** |
-| **`tower-shot` (Managed)** | **226 ns** | **25x faster** |
+| `tower::limit::RateLimit` | 118.5 µs | Buffered Wait (High Latency) |
+| **`tower-shot` (Standard)** | **99.7 µs** | **Precise Wait (Target: 100 µs)** |
+| **`tower-shot` (Managed)** | **263 ns** | **Fast Rejection (Load Shed)** |
+| `governor` (Managed) | 244 ns | Fast Rejection (Load Shed) |
 
-**Note:** The `governor` benchmark uses a `Service` adapter that correctly implements the Tower `poll_ready` contract (checking availability and waiting if necessary). In this standard Tower configuration, `tower-shot`'s optimized atomic implementation proves to be equally efficient, while offering additional managed features.
+**Note:** The `governor` benchmark uses a `Service` adapter that correctly implements the Tower `poll_ready` contract. In this saturated configuration, `tower-shot`'s optimized atomic implementation proves to be highly accurate, while the Managed Layer offers a failure mode (Load Shedding) that is **450x faster** than buffering.
 
 ### High Contention Scaling
 
@@ -237,19 +236,19 @@ When multiple tasks compete for permits, lock contention and context switching b
 
 Our "High Contention" benchmark simulates this by launching **1,000 concurrent tasks** that all attempt to acquire a permit simultaneously.
 
-The results show that `tower-shot`'s atomic design effectively eliminates this bottleneck, processing requests **3x faster** than the native Tower implementation and maintaining a slight edge over `governor`:
+The results show that `tower-shot`'s atomic design effectively eliminates this bottleneck, processing requests **45x faster** than the native Tower implementation and maintaining parity with `governor`:
 
-* **`tower-shot` (Standard):** 169 µs
-* **`governor` (Wait Adapter):** 172 µs
-* **`tower::limit::RateLimit`:** 504 µs
+* **`tower-shot` (Managed):** 310 µs
+* **`governor` (Managed):** 320 µs
+* **`tower` (Native Managed):** 14,055 µs (14 ms)
 
 > **The Difference:** The native Tower implementation forces all requests through a single channel (the `Buffer`), creating a serialization point that degrades performance under load. `tower-shot` avoids this entirely, using atomic counters to handle concurrent requests in parallel.
 
 ### Key Takeaways
 
-* **Negligible Overhead:** Adding the standard `RateLimitLayer` adds only **~108 nanoseconds** to your request path—virtually invisible in most networked applications.
+* **Precise Control:** The standard `RateLimitLayer` enforces the 100µs rate limit with ~0.3% error margin.
 * **Architectural Superiority:** By avoiding the need for `tower::Buffer` and intermediate channels, `tower-shot` eliminates the bottlenecks found in native Tower rate limiting.
-* **Managed Efficiency:** The "Managed" layers provide failsafe timeouts and backpressure **without using internal buffers**, ensuring that even your managed paths remain **25x faster** than the basic native Tower limiter.
+* **Managed Efficiency:** The "Managed" layers provide failsafe timeouts and backpressure **without using internal buffers**, ensuring that your load-shedding path remains **45x faster** (under contention) than the basic native Tower limiter.
 
 ## License
 
