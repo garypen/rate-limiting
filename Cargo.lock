@@ -1471,6 +1471,7 @@ dependencies = [
  "hdrhistogram",
  "http",
  "humantime",
+ "rand",
  "shot-limit",
  "thiserror",
  "tokio",

@@ -2,7 +2,6 @@
 name = "shot-limit"
 version.workspace = true
 edition.workspace = true
-description = "strategy driven rate limiting library"
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -11,6 +10,7 @@ documentation.workspace = true
 readme = "README.md"
 keywords = ["rate", "limiting", "strategy"]
 categories = ["concurrency", "algorithms"]
+description = "multiple strategy rate limiting library"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

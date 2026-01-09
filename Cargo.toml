@@ -14,7 +14,7 @@ authors = [
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/garypen/rate-limiting"
 homepage = "https://github.com/garypen/rate-limiting"
-documentation = "https://github.com/garypen/rate-limiting#readme"
+documentation = "https://github.com/garypen/rate-limiting?tab=readme-ov-file"
 edition = "2024"
 
 [workspace.dependencies]

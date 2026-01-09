@@ -7,7 +7,8 @@
 //!    - TokenBucket
 //!  - RateLimiting Style
 //!    - Standard (pure rate limiting)
-//!    - Managed (builtin timeout and load-shedding)
+//!    - Throughput (ManagedThroughputLayer - builtin timeout and retries)
+//!    - Latency (ManagedLatencyLayer - builtin timeout and load-shedding)
 //!
 //! By default, you get a router which:
 //!  - Ensures that no request takes > 500ms
@@ -28,7 +29,7 @@
 //! hey -n 100 -c 1 -q 20 http://localhost:3000/
 //! ```
 //!
-//! You should see something like 50% 200 and 50% 503 (unavailable).
+//! You should see something like 50% 200 and 50% 503 (unavailable) or 408 (timeout).
 //!
 //! Notes:
 //! - The timeout is set as a failsafe to enforce SLAs in case an
@@ -54,14 +55,16 @@ use shot_limit::Strategy;
 use shot_limit::TokenBucket;
 use tower::BoxError;
 use tower::ServiceBuilder;
-use tower_shot::ManagedRateLimitLayer;
+use tower_shot::ManagedLatencyLayer;
+use tower_shot::ManagedThroughputLayer;
 use tower_shot::RateLimitLayer;
 use tower_shot::ShotError;
 
 #[derive(ValueEnum, Clone, Debug)]
 enum LimiterType {
     Standard,
-    Managed,
+    Retry,
+    Latency,
 }
 
 #[derive(ValueEnum, Clone, Debug)]
@@ -80,7 +83,7 @@ struct Args {
     strategy: StrategyType,
 
     /// The type of tower layer to apply
-    #[arg(short, long, value_enum, default_value_t = LimiterType::Managed)]
+    #[arg(short, long, value_enum, default_value_t = LimiterType::Retry)]
     limiter: LimiterType,
 
     /// Requests per second allowed
@@ -132,7 +135,7 @@ async fn main() -> Result<(), BoxError> {
             app.layer(
                 ServiceBuilder::new()
                     .layer(HandleErrorLayer::new(handle_shot_error))
-                    // Since we aren't using ManagedRateLimitLayer, we
+                    // Since we aren't using managed layer, we
                     // specify load shedding and timeout manually.
                     .timeout(args.timeout)
                     .load_shed()
@@ -140,8 +143,17 @@ async fn main() -> Result<(), BoxError> {
                     .map_err(BoxError::from),
             )
         }
-        LimiterType::Managed => {
-            let layer = ManagedRateLimitLayer::new(strategy, args.timeout);
+        LimiterType::Retry => {
+            let layer = ManagedThroughputLayer::new(strategy, args.timeout);
+            app.layer(
+                ServiceBuilder::new()
+                    .layer(HandleErrorLayer::new(handle_shot_error))
+                    .layer(layer)
+                    .map_err(BoxError::from),
+            )
+        }
+        LimiterType::Latency => {
+            let layer = ManagedLatencyLayer::new(strategy, args.timeout);
             app.layer(
                 ServiceBuilder::new()
                     .layer(HandleErrorLayer::new(handle_shot_error))

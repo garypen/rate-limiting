@@ -1,6 +1,8 @@
 use std::num::NonZeroUsize;
 use std::ops::ControlFlow;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use quanta::Clock;

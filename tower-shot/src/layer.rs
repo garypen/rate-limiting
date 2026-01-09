@@ -12,6 +12,7 @@ where
     L: ?Sized,
 {
     limiter: Arc<L>,
+    fail_fast: bool,
 }
 
 impl<L> Clone for RateLimitLayer<L>
@@ -21,6 +22,7 @@ where
     fn clone(&self) -> Self {
         Self {
             limiter: Arc::clone(&self.limiter),
+            fail_fast: self.fail_fast,
         }
     }
 }
@@ -31,7 +33,19 @@ where
 {
     /// Create a RateLimitLayer
     pub fn new(limiter: Arc<L>) -> Self {
-        RateLimitLayer { limiter }
+        RateLimitLayer {
+            limiter,
+            fail_fast: false,
+        }
+    }
+
+    /// Set whether the service should fail immediately when overloaded.
+    ///
+    /// If `true`, the service will return `ShotError::RateLimited` immediately
+    /// instead of waiting for the rate limit to reset.
+    pub fn with_fail_fast(mut self, fail_fast: bool) -> Self {
+        self.fail_fast = fail_fast;
+        self
     }
 }
 
@@ -42,6 +56,6 @@ where
     type Service = RateLimitService<L, S>;
 
     fn layer(&self, service: S) -> Self::Service {
-        RateLimitService::new(service, self.limiter.clone())
+        RateLimitService::new(service, self.limiter.clone()).with_fail_fast(self.fail_fast)
     }
 }

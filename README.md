@@ -14,8 +14,9 @@ This project is split into three specialized crates:
 
 **Shot** was created to provide a flexible rate-limiting solution for Rust applications, focusing on configurability, performance, and eliminating buffer bloat.
 
-It offers two `tower` layers to suit different needs:
- - `ManagedRateLimitLayer`: An opinionated layer that provides timeouts and load shedding, ideal for protecting public-facing services.
+It offers several `tower` layers to suit different needs:
+ - `ManagedThroughputLayer`: Maximizes throughput by retrying requests within a timeout.
+ - `ManagedLatencyLayer`: Provides aggressive load shedding to protect service latency.
  - `RateLimitLayer`: A drop-in replacement for the existing `tower` rate-limiting layer, designed for maximum performance.
 
 ## Performance & Scaling
@@ -35,10 +36,12 @@ These strategies scale efficiently, maintaining high performance under multi-thr
 
 ### `tower-shot` (Middleware)
 `tower-shot` introduces minimal overhead while providing robust rate-limiting middleware.
-- **Standard `tower-shot` Layer:** ~125 ns latency, offering a significant speedup (97x faster) compared to `tower::limit::RateLimit`.
-- **Managed `tower-shot` Layer:** ~243 ns latency, providing advanced features like timeouts and load shedding while remaining highly performant (50x faster than `tower::limit::RateLimit`).
+- **Standard `tower-shot` Layer:** ~99.7 µs latency in saturated tests (precisely matching the 10k req/s target).
+- **Managed `tower-shot` Layer:** ~252 ns latency (Load Shedding), offering a massive speedup compared to `tower`'s buffered approach (~117.5 µs).
 
-Under high contention (1,000 concurrent tasks), `tower-shot` layers maintain excellent performance, with the Standard layer processing requests in approximately 212 µs. For full details, see [`tower-shot/README.md`](./tower-shot/README.md).
+When compared against `governor` in a fully Tower-compliant "Wait-until-Ready" configuration, `tower-shot` performs **on par** (~99.7 µs vs ~99.7 µs), while maintaining its architectural advantage over the native Tower implementation.
+
+Under high contention (1,000 concurrent tasks), `tower-shot` layers maintain excellent performance, with the Managed layer processing requests in approximately 312 µs, compared to ~14.3 ms for the native Tower implementation. For full details, see [`tower-shot/README.md`](./tower-shot/README.md).
 
 ## License
 

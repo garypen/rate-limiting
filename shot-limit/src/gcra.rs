@@ -1,6 +1,7 @@
 use std::num::NonZeroUsize;
 use std::ops::ControlFlow;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use quanta::Clock;
@@ -46,7 +47,7 @@ impl Gcra {
         let tat = self.tat.load(Ordering::Acquire);
 
         // Total capacity based on your new() math: period / (period/limit) = limit
-        let total_capacity = (self.delay_tolerance_ns / self.emission_interval_ns) as u64;
+        let total_capacity = self.delay_tolerance_ns / self.emission_interval_ns;
 
         if tat <= now {
             return total_capacity as usize;
@@ -56,8 +57,7 @@ impl Gcra {
 
         // Use ceiling division to ensure that even a partial interval
         // counts as a 'used' slot.
-        // Formula: (numerator + denominator - 1) / denominator
-        let used_slots = (diff + self.emission_interval_ns - 1) / self.emission_interval_ns;
+        let used_slots = diff.div_ceil(self.emission_interval_ns);
 
         if used_slots >= total_capacity {
             0
