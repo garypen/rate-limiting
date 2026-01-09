@@ -7,7 +7,7 @@ authors = [
     { name = "Gary Pennington", email = "garypen@gmail.com" }
 ]
 dependencies = [
-    "maturin==1.11.2",
+    "maturin==1.11.5",
     "pytest>=8.3.5",
 ]
 
