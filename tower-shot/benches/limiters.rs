@@ -1,3 +1,21 @@
+//! Benchmarks for `tower-shot` rate-limiting layers.
+//!
+//! These benchmarks are designed to evaluate the performance and behavior of different
+//! rate-limiting strategies under both low and high contention.
+//!
+//! ### Scenarios:
+//! - **Standard Layers**: Benchmarks the raw overhead of the rate-limiting logic (e.g., GCRA atomics)
+//!   without additional management logic.
+//! - **Managed Latency (Shed-First)**: Benchmarks the "Load Shed" behavior where requests exceeding
+//!   capacity are immediately rejected with an error.
+//! - **Managed Throughput (Retry-Based)**: Benchmarks the "Backpressure" behavior where requests
+//!   exceeding capacity are queued and retried until they succeed or timeout.
+//!
+//! ### Realistic Contention:
+//! The parameters (Capacity < Burst Size) are specifically tuned to force the limiters into a
+//! saturated state. This ensures we are benchmarking the actual enforcement logic (retries,
+//! load-shedding, and CAS contention) rather than just the no-op overhead of a free limiter.
+
 use std::hint::black_box;
 use std::num::NonZeroU32;
 use std::num::NonZeroUsize;
@@ -25,10 +43,10 @@ use governor::state::InMemoryState;
 use governor::state::NotKeyed;
 use http::Request;
 use http::Response;
-use shot_limit::FixedWindow;
+// use shot_limit::FixedWindow;
 use shot_limit::Gcra;
-use shot_limit::SlidingWindow;
-use shot_limit::TokenBucket;
+// use shot_limit::SlidingWindow;
+// use shot_limit::TokenBucket;
 use tokio::time::Sleep;
 use tokio::time::sleep;
 use tower::BoxError;
@@ -50,6 +68,14 @@ async fn noop_handler(_req: Request<String>) -> Result<Response<String>, BoxErro
     Ok(Response::new("ok".to_string()))
 }
 
+async fn run_one_req(mut svc: BenchService) -> Result<Response<String>, BoxError> {
+    let req = Request::builder().body("test".to_string()).unwrap();
+    match svc.ready().await {
+        Ok(_) => svc.call(req).await,
+        Err(e) => Err(e),
+    }
+}
+
 /// Generic runner for single-call overhead benchmarks
 fn bench_group(
     group: &mut BenchmarkGroup<WallTime>,
@@ -59,11 +85,51 @@ fn bench_group(
 ) {
     group.bench_function(id, |b| {
         b.to_async(rt).iter(|| {
-            let mut s = svc.clone();
+            let svc = svc.clone();
             async move {
-                let req = Request::builder().body("test".to_string()).unwrap();
-                let res = s.ready().await.unwrap().call(req).await;
+                let res = run_one_req(svc).await;
                 black_box(res)
+            }
+        });
+    });
+}
+
+/// Generic runner for single-call throughput benchmarks (counts successes)
+fn bench_throughput_group(
+    group: &mut BenchmarkGroup<WallTime>,
+    rt: &tokio::runtime::Runtime,
+    id: &str,
+    svc: BenchService,
+) {
+    group.bench_function(id, |b| {
+        b.to_async(rt).iter_custom(|iters| {
+            let svc = svc.clone();
+            async move {
+                let mut total_successes = 0;
+                let start = std::time::Instant::now();
+
+                for _ in 0..iters {
+                    let res = run_one_req(svc.clone()).await;
+                    if res.is_ok() {
+                        total_successes += 1;
+                    }
+                    let _ = black_box(res);
+                }
+
+                let elapsed = start.elapsed();
+
+                if total_successes == 0 {
+                    return Duration::from_secs(100_000);
+                }
+
+                // Adjust duration to make Criterion report "Successes per second"
+                // when we set throughput to Elements(1).
+                // Rate = iters / AdjustedTime
+                // Target = TotalSuccesses / RealTime
+                // iters / AdjustedTime = TotalSuccesses / RealTime
+                // AdjustedTime = iters * RealTime / TotalSuccesses
+
+                elapsed.mul_f64((iters as f64) / (total_successes as f64))
             }
         });
     });
@@ -79,19 +145,64 @@ fn bench_burst(
 ) {
     group.bench_function(id, |b| {
         b.to_async(rt).iter(|| {
-            let s = svc.clone();
+            let svc = svc.clone();
             async move {
                 let mut futures = FuturesUnordered::new();
                 for _ in 0..burst_size {
-                    let mut local_svc = s.clone();
-                    futures.push(async move {
-                        let req = Request::builder().body("test".to_string()).unwrap();
-                        local_svc.ready().await.unwrap().call(req).await
-                    });
+                    futures.push(run_one_req(svc.clone()));
                 }
                 while let Some(res) = futures.next().await {
                     let _ = black_box(res);
                 }
+            }
+        });
+    });
+}
+
+/// Generic runner for burst throughput benchmarks (counts successes)
+fn bench_throughput_burst(
+    group: &mut BenchmarkGroup<WallTime>,
+    rt: &tokio::runtime::Runtime,
+    id: &str,
+    svc: BenchService,
+    burst_size: usize,
+) {
+    group.bench_function(id, |b| {
+        b.to_async(rt).iter_custom(|iters| {
+            let svc = svc.clone();
+            async move {
+                let mut total_successes = 0;
+                let start = std::time::Instant::now();
+
+                for _ in 0..iters {
+                    let s = svc.clone();
+                    let mut futures = FuturesUnordered::new();
+                    // Initial fill only - NO RETRIES
+                    for _ in 0..burst_size {
+                        futures.push(run_one_req(s.clone()));
+                    }
+
+                    while let Some(res) = futures.next().await {
+                        if res.is_ok() {
+                            total_successes += 1;
+                        }
+                    }
+                }
+
+                let elapsed = start.elapsed();
+
+                if total_successes == 0 {
+                    return Duration::from_secs(100_000);
+                }
+
+                // Adjust duration to make Criterion report "Successes per second"
+                // when we set throughput to Elements(1).
+                // Rate = iters / AdjustedTime
+                // Target = TotalSuccesses / RealTime
+                // iters / AdjustedTime = TotalSuccesses / RealTime
+                // AdjustedTime = iters * RealTime / TotalSuccesses
+
+                elapsed.mul_f64((iters as f64) / (total_successes as f64))
             }
         });
     });
@@ -180,21 +291,37 @@ fn bench_all_scenarios(c: &mut Criterion) {
     // ENTER the runtime context so Tower's RateLimit can find the reactor
     let _guard = rt.enter();
 
-    let capacity_u = 100_000;
-    let increment_u = 100_000;
+    // Configuration for "Realistic" Rate Limiting
+    // Rate: 10,000 requests per second.
+    // Capacity: 100 requests.
+    // Period: 10ms.
+    // Burst: 1000 requests.
+    //
+    // Analysis:
+    // - Capacity (100) << Burst (1000).
+    // - The burst will effectively exhaust the limiter immediately.
+    // - This forces ManagedLatencyLayer to reject and ManagedThroughputLayer to retry.
+    let capacity_u = 100;
+    // increment_u is technically unused by GCRA, but kept for reference or if TokenBucket is re-enabled.
+    // let increment_u = 100;
     let capacity = NonZeroUsize::new(capacity_u).unwrap();
-    let increment = NonZeroUsize::new(increment_u).unwrap();
-    let period = Duration::from_millis(1);
-    let timeout = Duration::from_millis(100);
+    // let increment = NonZeroUsize::new(increment_u).unwrap();
+
+    let period = Duration::from_millis(10);
+    let timeout = Duration::from_millis(500); // Allow enough time for retries to potentially succeed
     let burst_size = 1000;
 
     // 1. Setup Shared Strategies
-    let fixed = Arc::new(FixedWindow::new(capacity, period));
-    let sliding = Arc::new(SlidingWindow::new(capacity, period));
-    let bucket = Arc::new(TokenBucket::new(capacity, increment, period));
+    // let fixed = Arc::new(FixedWindow::new(capacity, period));
+    // let sliding = Arc::new(SlidingWindow::new(capacity, period));
+    // let bucket = Arc::new(TokenBucket::new(capacity, increment, period));
     let gcra = Arc::new(Gcra::new(capacity, period));
+
+    // Calculate requests per second for Governor to match GCRA settings
+    // 100 req / 10ms = 10,000 req / s
+    let requests_per_second = (capacity_u as u64 * 1000) / period.as_millis() as u64;
     let governor = Arc::new(RateLimiter::direct(Quota::per_second(
-        NonZeroU32::new(<usize as TryInto<u32>>::try_into(increment_u).unwrap() * 1_000).unwrap(),
+        NonZeroU32::new(requests_per_second as u32).unwrap(),
     )));
 
     // 2. Define Scenarios (ID, Service)
@@ -359,7 +486,7 @@ fn bench_all_scenarios(c: &mut Criterion) {
             || id.contains("governor")
             || id.contains("tower")
         {
-            bench_group(&mut throughput_group, &rt, id, svc.clone());
+            bench_throughput_group(&mut throughput_group, &rt, id, svc.clone());
         }
     }
     throughput_group.finish();
@@ -383,10 +510,14 @@ fn bench_all_scenarios(c: &mut Criterion) {
     // Pass 2: Throughput
     let mut contention_throughput_group =
         c.benchmark_group("High Contention (1000 Tasks) Throughput");
-    contention_throughput_group.throughput(Throughput::Elements(burst_size as u64));
+    contention_throughput_group.throughput(Throughput::Elements(1));
     for (id, svc) in &scenarios {
-        if id.contains("managed_throughput") || id.contains("governor") || id.contains("tower") {
-            bench_burst(
+        if id.contains("managed_throughput")
+            || id.contains("governor")
+            || id.contains("tower")
+            || id.contains("standard")
+        {
+            bench_throughput_burst(
                 &mut contention_throughput_group,
                 &rt,
                 id,
