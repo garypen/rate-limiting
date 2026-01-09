@@ -250,6 +250,21 @@ The results show that `tower-shot`'s atomic design effectively eliminates this b
 * **Architectural Superiority:** By avoiding the need for `tower::Buffer` and intermediate channels, `tower-shot` eliminates the bottlenecks found in native Tower rate limiting.
 * **Managed Efficiency:** The "Managed" layers provide failsafe timeouts and backpressure **without using internal buffers**, ensuring that your load-shedding path remains **45x faster** (under contention) than the basic native Tower limiter.
 
+### Comparison with `governor`
+
+Based on our benchmarks and architectural design, `tower-shot` and `governor` are performance peers, but they offer different strengths:
+
+1.  **Performance (A Dead Heat):**
+    *   **Precision:** Both enforce rate limits with extreme accuracy (within ~0.3%).
+    *   **Load Shedding:** Both offer sub-microsecond rejection speeds (245ns vs 267ns).
+    *   **High Contention:** `tower-shot` performs slightly better under extreme pressure (1,000 tasks), processing bursts in **311µs** compared to `governor`'s **326µs**.
+
+2.  **Architectural Philosophy:**
+    *   **`governor`** is the gold standard for generic, feature-rich rate limiting in Rust. It requires third-party or custom adapters to integrate with Tower's `poll_ready` contract.
+    *   **`tower-shot`** is an operations-focused middleware suite designed specifically to solve the **Tower Buffer problem**. It provides native, pre-composed layers (Managed vs Standard) and choice of "Retry-until-Timeout" or "Shed-immediately" failure modes without configuration complexity.
+
+**Conclusion:** If you need a highly generic, standalone rate limiting library, choose `governor`. If you are building an **Axum or Tower-based service** and want high-performance rate limiting that protects your P99 latency out-of-the-box, `tower-shot` is optimized for you.
+
 ## License
 
 Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT license](LICENSE-MIT) at your option.
