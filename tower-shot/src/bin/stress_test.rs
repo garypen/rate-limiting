@@ -245,6 +245,5 @@ async fn main() -> Result<(), BoxError> {
         .service(service_fn(mock_db_call));
     run_load_test("Raw Tower RateLimit", tower_svc, total_reqs).await;
 
-    tokio::time::sleep(Duration::from_secs(5)).await;
     Ok(())
 }
