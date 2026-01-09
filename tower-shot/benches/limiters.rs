@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use criterion::BenchmarkGroup;
 use criterion::Criterion;
+use criterion::Throughput;
 use criterion::criterion_group;
 use criterion::criterion_main;
 use criterion::measurement::WallTime;
@@ -13,6 +14,7 @@ use futures::stream::FuturesUnordered;
 use futures::stream::StreamExt;
 use governor::Quota;
 use governor::RateLimiter;
+use governor::clock::Clock;
 use http::Request;
 use http::Response;
 use shot_limit::FixedWindow;
@@ -39,7 +41,7 @@ async fn noop_handler(_req: Request<String>) -> Result<Response<String>, BoxErro
 }
 
 /// Generic runner for single-call overhead benchmarks
-fn bench_overhead(
+fn bench_group(
     group: &mut BenchmarkGroup<WallTime>,
     rt: &tokio::runtime::Runtime,
     id: &str,
@@ -85,6 +87,85 @@ fn bench_burst(
     });
 }
 
+// --- GOVERNOR ADAPTER ---
+
+use governor::middleware::NoOpMiddleware;
+use governor::state::InMemoryState;
+use governor::clock::DefaultClock;
+use governor::state::NotKeyed;
+use tokio::time::Sleep;
+use tokio::time::sleep;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+
+struct GovernorService<S> {
+    inner: S,
+    limiter: Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>>,
+    sleep: Option<Pin<Box<Sleep>>>,
+}
+
+impl<S> Clone for GovernorService<S>
+where
+    S: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            limiter: self.limiter.clone(),
+            sleep: None,
+        }
+    }
+}
+
+impl<S, Req> Service<Req> for GovernorService<S>
+where
+    S: Service<Req, Error = BoxError>,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = S::Future;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        // 1. Check sleep
+        if let Some(ref mut fut) = self.sleep {
+            match fut.as_mut().poll(cx) {
+                Poll::Ready(_) => self.sleep = None,
+                Poll::Pending => return Poll::Pending,
+            }
+        }
+
+        // 2. Check inner
+        match self.inner.poll_ready(cx) {
+            Poll::Pending => return Poll::Pending,
+            Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+            Poll::Ready(Ok(())) => {}
+        }
+
+        // 3. Check governor
+        match self.limiter.check() {
+            Ok(_) => Poll::Ready(Ok(())),
+            Err(negative) => {
+                let wait: Duration = negative.wait_time_from(DefaultClock::default().now());
+                let mut sleep_fut = Box::pin(sleep(wait));
+                match sleep_fut.as_mut().poll(cx) {
+                    Poll::Pending => {
+                        self.sleep = Some(sleep_fut);
+                        Poll::Pending
+                    }
+                    Poll::Ready(_) => {
+                        cx.waker().wake_by_ref();
+                        Poll::Pending
+                    }
+                }
+            }
+        }
+    }
+
+    fn call(&mut self, req: Req) -> Self::Future {
+        self.inner.call(req)
+    }
+}
+
 // --- MAIN BENCHMARK ---
 
 fn bench_all_scenarios(c: &mut Criterion) {
@@ -96,25 +177,21 @@ fn bench_all_scenarios(c: &mut Criterion) {
     // ENTER the runtime context so Tower's RateLimit can find the reactor
     let _guard = rt.enter();
 
-    let limit_u = 100_000;
-    let limit = NonZeroUsize::new(limit_u).unwrap();
+    let capacity_u = 100_000;
+    let increment_u = 100_000;
+    let capacity = NonZeroUsize::new(capacity_u).unwrap();
+    let increment = NonZeroUsize::new(increment_u).unwrap();
     let period = Duration::from_millis(1);
     let timeout = Duration::from_millis(100);
     let burst_size = 1000;
 
     // 1. Setup Shared Strategies
-    // Use a massive burst limit so we measure the overhead of the math,
-    // not the time spent sleeping.
-    let bucket = Arc::new(TokenBucket::new(
-        NonZeroUsize::new(100_000_000).unwrap(), // Huge capacity
-        NonZeroUsize::new(100_000).unwrap(),
-        period,
-    ));
-    let fixed = Arc::new(FixedWindow::new(limit, period));
-    let sliding = Arc::new(SlidingWindow::new(limit, period));
-    let gcra = Arc::new(Gcra::new(limit, period));
+    let fixed = Arc::new(FixedWindow::new(capacity, period));
+    let sliding = Arc::new(SlidingWindow::new(capacity, period));
+    let bucket = Arc::new(TokenBucket::new(capacity, increment, period));
+    let gcra = Arc::new(Gcra::new(capacity, period));
     let governor = Arc::new(RateLimiter::direct(Quota::per_second(
-        NonZeroU32::new(limit_u.try_into().unwrap()).unwrap(),
+        NonZeroU32::new(increment_u.try_into().unwrap()).unwrap(),
     )));
 
     // 2. Define Scenarios (ID, Service)
@@ -153,24 +230,18 @@ fn bench_all_scenarios(c: &mut Criterion) {
             ),
         ),
         ("standard_governor", {
-            let governor_clone = governor.clone();
-            BoxCloneSyncService::new(service_fn(move |req| {
-                let limiter = governor_clone.clone();
-                async move {
-                    if limiter.check().is_ok() {
-                        noop_handler(req).await
-                    } else {
-                        Err("Rate limited".into())
-                    }
-                }
-            }))
+            BoxCloneSyncService::new(GovernorService {
+                inner: service_fn(noop_handler),
+                limiter: governor.clone(),
+                sleep: None,
+            })
         }),
         (
             "standard_tower_native",
             BoxCloneSyncService::new(
                 ServiceBuilder::new()
-                    .buffer(1_024)
-                    .layer(TowerNativeRateLimit::new(limit_u as u64, period))
+                    .buffer(capacity_u)
+                    .layer(TowerNativeRateLimit::new(capacity_u as u64, period))
                     .service(service_fn(noop_handler)),
             ),
         ),
@@ -258,26 +329,69 @@ fn bench_all_scenarios(c: &mut Criterion) {
                 ServiceBuilder::new()
                     .timeout(timeout)
                     .load_shed()
-                    .buffer(1_024)
-                    .layer(TowerNativeRateLimit::new(limit_u as u64, period))
+                    .buffer(capacity_u)
+                    .layer(TowerNativeRateLimit::new(capacity_u as u64, period))
                     .service(service_fn(noop_handler)),
             ),
         ),
     ];
 
-    // 3. Run Overhead Group
-    let mut overhead_group = c.benchmark_group("Middleware Overhead");
+    // 3. Run Latency Group
+    let mut latency_group = c.benchmark_group("Middleware Latency");
+    // Pass 1: Standard/Latency (no throughput calc)
     for (id, svc) in &scenarios {
-        bench_overhead(&mut overhead_group, &rt, id, svc.clone());
+        if !id.contains("managed_throughput") {
+            bench_group(&mut latency_group, &rt, id, svc.clone());
+        }
     }
-    overhead_group.finish();
+    latency_group.finish();
+
+    // Pass 2: Throughput (throughput calc)
+    let mut throughput_group = c.benchmark_group("Middleware Throughput");
+    throughput_group.throughput(Throughput::Elements(1));
+    for (id, svc) in &scenarios {
+        if id.contains("managed_throughput")
+            || id.contains("standard")
+            || id.contains("governor")
+            || id.contains("tower")
+        {
+            bench_group(&mut throughput_group, &rt, id, svc.clone());
+        }
+    }
+    throughput_group.finish();
 
     // 4. Run Contention Group
-    let mut contention_group = c.benchmark_group("High Contention (1000 Tasks)");
+    let mut contention_latency_group = c.benchmark_group("High Contention (1000 Tasks) Latency");
+    // Pass 1: Standard/Latency
     for (id, svc) in &scenarios {
-        bench_burst(&mut contention_group, &rt, id, svc.clone(), burst_size);
+        if !id.contains("managed_throughput") {
+            bench_burst(
+                &mut contention_latency_group,
+                &rt,
+                id,
+                svc.clone(),
+                burst_size,
+            );
+        }
     }
-    contention_group.finish();
+    contention_latency_group.finish();
+
+    // Pass 2: Throughput
+    let mut contention_throughput_group =
+        c.benchmark_group("High Contention (1000 Tasks) Throughput");
+    contention_throughput_group.throughput(Throughput::Elements(burst_size as u64));
+    for (id, svc) in &scenarios {
+        if id.contains("managed_throughput") || id.contains("governor") || id.contains("tower") {
+            bench_burst(
+                &mut contention_throughput_group,
+                &rt,
+                id,
+                svc.clone(),
+                burst_size,
+            );
+        }
+    }
+    contention_throughput_group.finish();
 }
 
 criterion_group!(benches, bench_all_scenarios);

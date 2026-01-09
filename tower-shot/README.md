@@ -202,7 +202,7 @@ Tower Shot categorizes failures so your clients can react appropriately without 
 
 ## Performance
 
-`tower-shot` is designed for high-throughput services where middleware overhead must be kept to an absolute minimum. In our benchmarks, `tower-shot` consistently outperforms the native Tower implementation by a factor of **97x** and provides similiar performance to established crates like `governor`.
+`tower-shot` is designed for high-throughput services where middleware overhead must be kept to an absolute minimum. In our benchmarks, `tower-shot` consistently outperforms the native Tower implementation by a factor of **~50x** and is **~100x faster** than `governor` when used in a fully Tower-compliant "Wait-based" configuration.
 
 ### Benchmarks
 
@@ -224,24 +224,26 @@ The following table shows the raw overhead introduced by the middleware for a si
 
 | Implementation | Latency (ns) | Relative Speed |
 |:---|:---:|:---:|
-| `tower::limit::RateLimit` | 12,199 ns | 1x |
-| `governor` | 169.88 ns | 71x faster |
-| **`tower-shot` (Standard)** | **125.09 ns** | **97x faster** |
-| **`tower-shot` (Managed)** | **242.83 ns** | **50x faster** |
+| `tower::limit::RateLimit` | 5,874 ns | 1x |
+| `governor` (Wait Adapter) | 9,987 ns | 0.6x (Slower) |
+| **`tower-shot` (Standard)** | **108 ns** | **54x faster** |
+| **`tower-shot` (Managed)** | **227 ns** | **25x faster** |
+
+**Note:** The `governor` benchmark uses a `Service` adapter that correctly implements the Tower `poll_ready` contract (checking availability and waiting if necessary). In this standard Tower configuration, `tower-shot`'s optimized atomic implementation proves to be significantly more efficient.
 
 ### High Contention Scaling
 
 When under pressure from **1,000 concurrent tasks** competing for permits, `tower-shot` maintains its lead by minimizing lock contention:
 
-* **`tower-shot` (Standard):** 211.60 µs
-* **`governor`:** 249.02 µs
-* **`tower::limit::RateLimit`:** 788.38 µs
+* **`tower-shot` (Standard):** 169 µs
+* **`tower::limit::RateLimit`:** 505 µs
+* **`governor` (Wait Adapter):** ~10,000 µs (10 ms)
 
 ### Key Takeaways
 
-* **Negligible Overhead:** Adding the standard `RateLimitLayer` adds only **~125 nanoseconds** to your request path—virtually invisible in most networked applications.
-* **Predictable Stability:** While native Tower implementations often show significant jitter (up to **17% outliers**) under load, `tower-shot` remains stable with significantly fewer timing outliers.
-* **Managed Efficiency:** The "Managed" layers provide failsafe timeouts and backpressure **without using internal buffers**, ensuring that even your managed paths remain **50x faster** than the basic native Tower limiter.
+* **Negligible Overhead:** Adding the standard `RateLimitLayer` adds only **~108 nanoseconds** to your request path—virtually invisible in most networked applications.
+* **Architectural Superiority:** By avoiding the need for `tower::Buffer` and intermediate channels, `tower-shot` eliminates the bottlenecks found in native Tower rate limiting.
+* **Managed Efficiency:** The "Managed" layers provide failsafe timeouts and backpressure **without using internal buffers**, ensuring that even your managed paths remain **25x faster** than the basic native Tower limiter.
 
 ## License
 
