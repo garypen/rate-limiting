@@ -52,11 +52,13 @@ There is a short stress testing program that tries to illustrate all of this, `s
 
 `tower-shot` uses a **Managed Architecture** that pairs atomic rate-limiting strategies with aggressive Load Shedding and Timeout SLAs. 
 
-Configuring and using `tower-shot` is both simpler, since buffer is not required, and more expressive, since you can choose the rate limiting strategy which best represents your goals. For example, if you want to continue using a Fixed Window (which is the strategy supported by the tower Rate Limit) strategy rate limit, your drop-in replacement would look like this:
+Configuring and using `tower-shot` is both simpler, since buffer is not required, and more expressive, since you can choose both your main goal in rate limiting, **maximise Throughput** or **minimise Latency**, and the strategy you prefer: FixedWindow, SlidingWindow, Token Bucket, Generic Cell Rate Algorithm(GCRA).
+
+For example, if you want to continue using a Fixed Window (which is the strategy supported by the tower Rate Limit) strategy rate limit, your drop-in replacement would look like this:
 
 ```rust
 let fixed = Arc::new(FixedWindow::new(capacity, period));
-let fixed_layer = ManagedThroughputLayer::new(fixed, timeout);
+let fixed_layer = ManagedLatencyLayer::new(fixed, timeout);
 let tower_svc = ServiceBuilder::new()
     .timeout(timeout)
     .layer(fixed_layer)
@@ -66,11 +68,11 @@ let tower_svc = ServiceBuilder::new()
 ### The Proof (Stress Test Results)
 Under a burst of 50,000 concurrent requests with a 10,000-request capacity:
 
-| Metric | Raw Rate Limiter | **Tower Shot (Managed Retry)** |
+| Metric | Raw Rate Limiter (Buffered) | **Tower Shot (Managed)** |
 | :--- | :--- | :--- |
-| **P99 Latency** | **4,500 ms** | **0.5 ms** |
+| **P99 Wait Time** | **~4,000 ms** (Queuing) | **~0.0003 ms** (Zero Queueing) |
 | **System Health** | Severely Backlogged | Responsive |
-| **Failure Mode** | Unbounded Latency | **SLA Enforcement** |
+| **Failure Mode** | Unbounded Queueing | **SLA Enforcement** (Load Shed) |
 
 > **The Result:** Tower Shot ensures that the 10,000 requests that *can* be handled are processed at near-instant speeds, while excess traffic is shed or retried efficiently to protect your P99 and system stability.
 
@@ -210,7 +212,7 @@ The crate includes the various benchmarks and tests we executed to generate our 
 The testing is performed on a 2021 Mac M1 laptop.
 
 ```bash
-# Run micro-benchmarks to see atomic overhead
+# Run micro-benchmarks to compare different modes of operation
 cargo bench
 
 # Run the resilience stress test to see SLA enforcement
@@ -221,14 +223,14 @@ cargo run --bin stress_test --release
 
 The following table shows the behavior of the middleware when the system is fully saturated (10,000 req/s capacity).
 
-| Implementation | Latency | Behavior |
+| Implementation | P99 Wait Time | Behavior |
 |:---|:---:|:---:|
-| `tower::limit::RateLimit` | 117.5 µs | Buffered Wait (High Latency) |
-| **`tower-shot` (Standard)** | **99.7 µs** | **Precise Wait (Target: 100 µs)** |
-| **`tower-shot` (Managed)** | **252 ns** | **Fast Rejection (Load Shed)** |
-| `governor` (Managed) | 263 ns | Fast Rejection (Load Shed) |
+| `tower::limit::RateLimit` | ~3,000 ms | Buffered Wait (High Latency) |
+| **`tower-shot` (Raw)** | **~4,000 ms** | **Buffered Wait (High Latency)** |
+| **`tower-shot` (Managed)** | **~250 ns** | **Fast Rejection (Load Shed)** |
+| `governor` (Managed) | ~260 ns | Fast Rejection (Load Shed) |
 
-**Note:** The `governor` benchmark uses a `Service` adapter that correctly implements the Tower `poll_ready` contract. In this saturated configuration, `tower-shot`'s optimized atomic implementation proves to be highly accurate, while the Managed Layer offers a failure mode (Load Shedding) that is **450x faster** than buffering.
+**Note:** The `governor` benchmark uses a `Service` adapter that correctly implements the Tower `poll_ready` contract. In this saturated configuration, `tower-shot`'s optimized atomic implementation proves to be highly accurate, while the Managed Layer offers a failure mode (Load Shedding) that is **orders of magnitude faster** than buffering.
 
 ### High Contention Scaling
 
