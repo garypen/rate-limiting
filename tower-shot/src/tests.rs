@@ -17,7 +17,6 @@ use shot_limit::TokenBucket;
 use tower::BoxError;
 use tower::Layer;
 use tower::Service;
-use tower::ServiceBuilder;
 use tower::ServiceExt;
 
 use super::*;
@@ -246,6 +245,7 @@ async fn test_immediate_recovery() {
     service.call(()).await.unwrap();
 }
 
+// #[tokio::test(flavor = "multi_thread")]
 #[tokio::test]
 async fn test_managed_layer_cloning_concurrency() {
     let capacity = 5;
@@ -254,13 +254,12 @@ async fn test_managed_layer_cloning_concurrency() {
         Duration::from_secs(60),
     );
 
-    // Create the Managed Layer (Wait up to 100ms before failing)
-    let layer = ManagedThroughputLayer::new(Arc::new(limiter), Duration::from_millis(100));
-
     let mock_count = Arc::new(AtomicUsize::new(0));
-    let service = ServiceBuilder::new().layer(layer).service(MockService {
+    let service = MockService {
         count: mock_count.clone(),
-    });
+    };
+    // Create the Managed Service (Wait up to 100ms before failing)
+    let service = make_timeout_svc(Arc::new(limiter), Duration::from_millis(100), service);
 
     let mut handles = vec![];
 
@@ -306,13 +305,12 @@ async fn test_managed_layer_error_type() {
     );
 
     // Short timeout
-    let layer = ManagedThroughputLayer::new(Arc::new(limiter), Duration::from_millis(10));
-
     let mock_count = Arc::new(AtomicUsize::new(0));
-    let service = ServiceBuilder::new().layer(layer).service(MockService {
+    let service = MockService {
         count: mock_count.clone(),
-    });
+    };
 
+    let service = make_timeout_svc(Arc::new(limiter), Duration::from_millis(100), service);
     let mut svc1 = service.clone();
     let mut svc2 = service.clone();
 
@@ -320,7 +318,12 @@ async fn test_managed_layer_error_type() {
     svc1.ready().await.unwrap().call(()).await.unwrap();
 
     // 2. Second request should retry then timeout
-    let err = svc2.ready().await.unwrap().call(()).await.unwrap_err();
+    // The timeout might happen in ready() (waiting for permit) or call() (execution time)
+    // In this case, it happens in ready().
+    let err = match svc2.ready().await {
+        Ok(ready_svc) => ready_svc.call(()).await.unwrap_err(),
+        Err(e) => e,
+    };
 
     if let Some(shot_err) = err.downcast_ref::<ShotError>() {
         match shot_err {
@@ -341,26 +344,29 @@ async fn test_managed_latency_layer_error_type() {
     );
 
     // Short timeout (doesn't really matter for Latency if it hits immediately)
-    let layer = ManagedLatencyLayer::new(Arc::new(limiter), Duration::from_millis(100));
-
     let mock_count = Arc::new(AtomicUsize::new(0));
-    let service = ServiceBuilder::new().layer(layer).service(MockService {
+    let service = MockService {
         count: mock_count.clone(),
-    });
+    };
 
+    let service = make_latency_svc(Arc::new(limiter), Duration::from_millis(100), service);
     let mut svc1 = service.clone();
     let mut svc2 = service.clone();
 
     // 1. First request succeeds
     svc1.ready().await.unwrap().call(()).await.unwrap();
 
-    // 2. Second request should fail immediately with Overloaded
-    let err = svc2.ready().await.unwrap().call(()).await.unwrap_err();
+    // 2. Second request should fail immediately with RateLimited
+    let err = match svc2.ready().await {
+        Ok(ready_svc) => ready_svc.call(()).await.unwrap_err(),
+        Err(e) => e,
+    };
 
     if let Some(shot_err) = err.downcast_ref::<ShotError>() {
+        println!("shot_err: {shot_err:?}");
         match shot_err {
-            ShotError::Overloaded => {} // Good
-            _ => panic!("Expected ShotError::Overloaded, got {:?}", shot_err),
+            ShotError::RateLimited { .. } => {} // Good
+            _ => panic!("Expected ShotError::RateLimited, got {:?}", shot_err),
         }
     } else {
         panic!("Expected ShotError, got {:?}", err);

@@ -7,8 +7,8 @@
 //!    - TokenBucket
 //!  - RateLimiting Style
 //!    - Standard (pure rate limiting)
-//!    - Throughput (ManagedThroughputLayer - builtin timeout and retries)
-//!    - Latency (ManagedLatencyLayer - builtin timeout and load-shedding)
+//!    - Throughput (with timeout)
+//!    - Latency (with timeout and load-shedding)
 //!
 //! By default, you get a router which:
 //!  - Ensures that no request takes > 500ms
@@ -55,15 +55,14 @@ use shot_limit::Strategy;
 use shot_limit::TokenBucket;
 use tower::BoxError;
 use tower::ServiceBuilder;
-use tower_shot::ManagedLatencyLayer;
-use tower_shot::ManagedThroughputLayer;
 use tower_shot::RateLimitLayer;
+use tower_shot::ServiceBuilderExt;
 use tower_shot::ShotError;
 
 #[derive(ValueEnum, Clone, Debug)]
 enum LimiterType {
     Standard,
-    Retry,
+    Throughput,
     Latency,
 }
 
@@ -83,7 +82,7 @@ struct Args {
     strategy: StrategyType,
 
     /// The type of tower layer to apply
-    #[arg(short, long, value_enum, default_value_t = LimiterType::Retry)]
+    #[arg(short, long, value_enum, default_value_t = LimiterType::Throughput)]
     limiter: LimiterType,
 
     /// Requests per second allowed
@@ -127,40 +126,38 @@ async fn main() -> Result<(), BoxError> {
         args.strategy, args.limiter, args.capacity, args.period, args.timeout
     );
 
+    // Setup OTLP metrics
+    let meter_provider = init_metrics("axum_managed").await?;
+
+    global::set_meter_provider(meter_provider);
+
     let mut app = Router::new().route("/", get(|| async { "Hello, Shot!" }));
+
+    let error_layer = HandleErrorLayer::new(handle_shot_error);
 
     app = match args.limiter {
         LimiterType::Standard => {
             let layer = RateLimitLayer::new(strategy);
             app.layer(
                 ServiceBuilder::new()
-                    .layer(HandleErrorLayer::new(handle_shot_error))
-                    // Since we aren't using managed layer, we
-                    // specify load shedding and timeout manually.
-                    .timeout(args.timeout)
-                    .load_shed()
+                    .layer(error_layer)
                     .layer(layer)
                     .map_err(BoxError::from),
             )
         }
-        LimiterType::Retry => {
-            let layer = ManagedThroughputLayer::new(strategy, args.timeout);
-            app.layer(
-                ServiceBuilder::new()
-                    .layer(HandleErrorLayer::new(handle_shot_error))
-                    .layer(layer)
-                    .map_err(BoxError::from),
-            )
-        }
-        LimiterType::Latency => {
-            let layer = ManagedLatencyLayer::new(strategy, args.timeout);
-            app.layer(
-                ServiceBuilder::new()
-                    .layer(HandleErrorLayer::new(handle_shot_error))
-                    .layer(layer)
-                    .map_err(BoxError::from),
-            )
-        }
+        LimiterType::Throughput => app.layer(
+            ServiceBuilder::new()
+                .layer(error_layer)
+                .throughput_rate_limit(strategy, args.timeout)
+                .map_err(BoxError::from),
+        ),
+        LimiterType::Latency => app.layer(
+            ServiceBuilder::new()
+                .layer(error_layer)
+                // .layer(RateLimitLayer::new(strategy).with_fail_fast(true))
+                .latency_rate_limit(strategy)
+                .map_err(BoxError::from),
+        ),
     };
 
     let listener = tokio::net::TcpListener::bind(args.addr).await?;
@@ -182,4 +179,35 @@ async fn handle_shot_error(err: BoxError) -> impl IntoResponse {
     } else {
         (StatusCode::INTERNAL_SERVER_ERROR, "Internal Service Error").into_response()
     }
+}
+
+use opentelemetry::KeyValue;
+use opentelemetry::global;
+use opentelemetry_otlp::ExporterBuildError;
+use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_sdk::Resource;
+use opentelemetry_sdk::metrics::SdkMeterProvider;
+
+/// Configure OTLP exporter for metrics
+async fn init_metrics(service_name: &str) -> Result<SdkMeterProvider, ExporterBuildError> {
+    // Create resource with service identification
+    let resource = Resource::builder()
+        .with_attributes(vec![KeyValue::new(
+            "service.name",
+            service_name.to_string(),
+        )])
+        .build();
+
+    // Build meter provider with periodic export
+    let exporter = opentelemetry_otlp::MetricExporter::builder()
+        .with_tonic()
+        .with_endpoint(
+            std::env::var("OTLP_ENDPOINT").unwrap_or_else(|_| "http://localhost:4317".to_string()),
+        )
+        .build()?;
+    let meter_provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder()
+        .with_periodic_exporter(exporter)
+        .with_resource(resource)
+        .build();
+    Ok(meter_provider)
 }
