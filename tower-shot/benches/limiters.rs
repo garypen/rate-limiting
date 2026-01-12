@@ -303,18 +303,18 @@ fn bench_all_scenarios(c: &mut Criterion) {
     // - This forces the Latency Service to reject and the Throughput Service to retry.
     let capacity_u = 100;
     // increment_u is technically unused by GCRA, but kept for reference or if TokenBucket is re-enabled.
-    // let increment_u = 100;
+    let increment_u = 100;
     let capacity = NonZeroUsize::new(capacity_u).unwrap();
-    // let increment = NonZeroUsize::new(increment_u).unwrap();
+    let increment = NonZeroUsize::new(increment_u).unwrap();
 
     let period = Duration::from_millis(10);
     let timeout = Duration::from_millis(500); // Allow enough time for retries to potentially succeed
     let burst_size = 1000;
 
     // 1. Setup Shared Strategies
-    // let fixed = Arc::new(FixedWindow::new(capacity, period));
-    // let sliding = Arc::new(SlidingWindow::new(capacity, period));
-    // let bucket = Arc::new(TokenBucket::new(capacity, increment, period));
+    let fixed = Arc::new(FixedWindow::new(capacity, period));
+    let sliding = Arc::new(SlidingWindow::new(capacity, period));
+    let bucket = Arc::new(TokenBucket::new(capacity, increment, period));
     let gcra = Arc::new(Gcra::new(capacity, period));
 
     // Calculate requests per second for Governor to match GCRA settings
@@ -327,7 +327,6 @@ fn bench_all_scenarios(c: &mut Criterion) {
     // 2. Define Scenarios (ID, Service)
     // This makes adding new strategies or layers trivial.
     let scenarios: Vec<(&str, BenchService)> = vec![
-        /*
         (
             "shot_standard_fixed",
             BoxCloneSyncService::new(
@@ -352,7 +351,6 @@ fn bench_all_scenarios(c: &mut Criterion) {
                     .service(service_fn(noop_handler)),
             ),
         ),
-        */
         (
             "shot_standard_gcra",
             BoxCloneSyncService::new(
@@ -378,7 +376,6 @@ fn bench_all_scenarios(c: &mut Criterion) {
                     .service(service_fn(noop_handler)),
             ),
         ),
-        /*
         (
             "shot_managed_throughput_fixed",
             make_timeout_svc(fixed.clone(), timeout, service_fn(noop_handler)),
@@ -403,7 +400,6 @@ fn bench_all_scenarios(c: &mut Criterion) {
             "shot_managed_latency_bucket",
             make_latency_svc(bucket, timeout, service_fn(noop_handler)),
         ),
-        */
         (
             "shot_managed_throughput_gcra",
             make_timeout_svc(gcra.clone(), timeout, service_fn(noop_handler)),
