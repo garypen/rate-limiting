@@ -319,7 +319,7 @@ async fn test_managed_layer_error_type() {
 
     // 2. Second request should retry then timeout
     // The timeout might happen in ready() (waiting for permit) or call() (execution time)
-    // With our recent change, it happens in ready().
+    // In this case, it happens in ready().
     let err = match svc2.ready().await {
         Ok(ready_svc) => ready_svc.call(()).await.unwrap_err(),
         Err(e) => e,
@@ -356,19 +356,17 @@ async fn test_managed_latency_layer_error_type() {
     // 1. First request succeeds
     svc1.ready().await.unwrap().call(()).await.unwrap();
 
-    // 2. Second request should fail immediately with Overloaded
+    // 2. Second request should fail immediately with RateLimited
     let err = match svc2.ready().await {
         Ok(ready_svc) => ready_svc.call(()).await.unwrap_err(),
         Err(e) => e,
     };
-    // let err = svc2.ready().await.unwrap().call(()).await.unwrap_err();
 
     if let Some(shot_err) = err.downcast_ref::<ShotError>() {
         println!("shot_err: {shot_err:?}");
         match shot_err {
             ShotError::RateLimited { .. } => {} // Good
-            // ShotError::Overloaded => {}         // Good
-            _ => panic!("Expected ShotError::Overloaded, got {:?}", shot_err),
+            _ => panic!("Expected ShotError::RateLimited, got {:?}", shot_err),
         }
     } else {
         panic!("Expected ShotError, got {:?}", err);
