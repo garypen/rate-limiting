@@ -43,10 +43,10 @@ use governor::state::InMemoryState;
 use governor::state::NotKeyed;
 use http::Request;
 use http::Response;
-// use shot_limit::FixedWindow;
+use shot_limit::FixedWindow;
 use shot_limit::Gcra;
-// use shot_limit::SlidingWindow;
-// use shot_limit::TokenBucket;
+use shot_limit::SlidingWindow;
+use shot_limit::TokenBucket;
 use tokio::time::Sleep;
 use tokio::time::sleep;
 use tower::BoxError;
@@ -56,9 +56,9 @@ use tower::ServiceExt;
 use tower::limit::RateLimitLayer as TowerNativeRateLimit;
 use tower::service_fn;
 use tower::util::BoxCloneSyncService;
-use tower_shot::ManagedLatencyLayer;
-use tower_shot::ManagedThroughputLayer;
 use tower_shot::RateLimitLayer;
+use tower_shot::make_latency_svc;
+use tower_shot::make_timeout_svc;
 
 // --- HELPERS & TYPES ---
 
@@ -300,7 +300,7 @@ fn bench_all_scenarios(c: &mut Criterion) {
     // Analysis:
     // - Capacity (100) << Burst (1000).
     // - The burst will effectively exhaust the limiter immediately.
-    // - This forces ManagedLatencyLayer to reject and ManagedThroughputLayer to retry.
+    // - This forces the Latency Service to reject and the Throughput Service to retry.
     let capacity_u = 100;
     // increment_u is technically unused by GCRA, but kept for reference or if TokenBucket is re-enabled.
     // let increment_u = 100;
@@ -381,68 +381,36 @@ fn bench_all_scenarios(c: &mut Criterion) {
         /*
         (
             "shot_managed_throughput_fixed",
-            BoxCloneSyncService::new(
-                ServiceBuilder::new()
-                    .layer(ManagedThroughputLayer::new(fixed.clone(), timeout))
-                    .service(service_fn(noop_handler)),
-            ),
+            make_timeout_svc(fixed.clone(), timeout, service_fn(noop_handler)),
         ),
         (
             "shot_managed_latency_fixed",
-            BoxCloneSyncService::new(
-                ServiceBuilder::new()
-                    .layer(ManagedLatencyLayer::new(fixed, timeout))
-                    .service(service_fn(noop_handler)),
-            ),
+            make_latency_svc(fixed, timeout, service_fn(noop_handler)),
         ),
         (
             "shot_managed_throughput_sliding",
-            BoxCloneSyncService::new(
-                ServiceBuilder::new()
-                    .layer(ManagedThroughputLayer::new(sliding.clone(), timeout))
-                    .service(service_fn(noop_handler)),
-            ),
+            make_timeout_svc(sliding.clone(), timeout, service_fn(noop_handler)),
         ),
         (
             "shot_managed_latency_sliding",
-            BoxCloneSyncService::new(
-                ServiceBuilder::new()
-                    .layer(ManagedLatencyLayer::new(sliding, timeout))
-                    .service(service_fn(noop_handler)),
-            ),
+            make_latency_svc(sliding, timeout, service_fn(noop_handler)),
         ),
         (
             "shot_managed_throughput_bucket",
-            BoxCloneSyncService::new(
-                ServiceBuilder::new()
-                    .layer(ManagedThroughputLayer::new(bucket.clone(), timeout))
-                    .service(service_fn(noop_handler)),
-            ),
+            make_timeout_svc(bucket.clone(), timeout, service_fn(noop_handler)),
         ),
         (
             "shot_managed_latency_bucket",
-            BoxCloneSyncService::new(
-                ServiceBuilder::new()
-                    .layer(ManagedLatencyLayer::new(bucket, timeout))
-                    .service(service_fn(noop_handler)),
-            ),
+            make_latency_svc(bucket, timeout, service_fn(noop_handler)),
         ),
         */
         (
             "shot_managed_throughput_gcra",
-            BoxCloneSyncService::new(
-                ServiceBuilder::new()
-                    .layer(ManagedThroughputLayer::new(gcra.clone(), timeout))
-                    .service(service_fn(noop_handler)),
-            ),
+            make_timeout_svc(gcra.clone(), timeout, service_fn(noop_handler)),
         ),
         (
             "shot_managed_latency_gcra",
-            BoxCloneSyncService::new(
-                ServiceBuilder::new()
-                    .layer(ManagedLatencyLayer::new(gcra, timeout))
-                    .service(service_fn(noop_handler)),
-            ),
+            make_latency_svc(gcra.clone(), timeout, service_fn(noop_handler)),
         ),
         ("managed_governor", {
             BoxCloneSyncService::new(ServiceBuilder::new().timeout(timeout).load_shed().service(

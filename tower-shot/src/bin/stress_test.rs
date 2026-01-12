@@ -20,10 +20,10 @@ use tower::Service;
 use tower::ServiceBuilder;
 use tower::ServiceExt;
 use tower::service_fn;
-use tower_shot::ManagedLatencyLayer;
-use tower_shot::ManagedThroughputLayer;
 use tower_shot::RateLimitLayer;
 use tower_shot::ShotError;
+use tower_shot::make_latency_svc;
+use tower_shot::make_timeout_svc;
 
 async fn mock_db_call(req: u64) -> Result<&'static str, tower::BoxError> {
     // Simulate real-world work (100 - 4_000 ms of DB latency)
@@ -99,7 +99,7 @@ where
                 if let Some(shot_err) = e.downcast_ref::<ShotError>() {
                     match shot_err {
                         ShotError::Timeout => rejections.timeouts += 1,
-                        ShotError::Overloaded => rejections.sheds += 1,
+                        // ShotError::Overloaded => rejections.sheds += 1,
                         ShotError::RateLimited { .. } => rejections.sheds += 1,
                         ShotError::Inner(_) => rejections.inner += 1,
                     }
@@ -152,22 +152,56 @@ where
     }
     println!();
 }
+
+/*
+async fn make_timeout_svc<S>(
+    strategy: Arc<S>,
+    timeout: Duration,
+) -> BoxCloneSyncService<u64, &'static str, BoxError>
+where
+    S: Strategy + Send + Sync + 'static,
+{
+    BoxCloneSyncService::new(
+        ServiceBuilder::new()
+            .timeout(timeout)
+            .layer(RateLimitLayer::new(strategy))
+            .service(service_fn(mock_db_call)),
+    )
+}
+
+async fn make_latency_svc<S>(
+    strategy: Arc<S>,
+    timeout: Duration,
+) -> BoxCloneSyncService<u64, &'static str, BoxError>
+where
+    S: Strategy + Send + Sync + 'static,
+{
+    BoxCloneSyncService::new(
+        ServiceBuilder::new()
+            .timeout(timeout)
+            .load_shed()
+            .layer(RateLimitLayer::new(strategy))
+            .service(service_fn(mock_db_call)),
+    )
+}
+*/
+
 #[tokio::main]
 async fn main() -> Result<(), BoxError> {
     let capacity = 10_000.try_into()?;
     let increment = 10_000.try_into()?;
     let period = Duration::from_secs(1);
-    let timeout = Duration::from_millis(4_900);
+    let timeout = Duration::from_millis(3_900);
     let total_reqs = 50_000;
 
     // 1.a. Managed Retry Fixed Window Stress
     let fixed = Arc::new(FixedWindow::new(capacity, period));
-    let fixed_svc = ManagedThroughputLayer::new(fixed, timeout).layer(service_fn(mock_db_call));
+    let fixed_svc = make_timeout_svc(fixed, timeout, service_fn(mock_db_call));
     run_load_test("Managed Throughput Fixed Window", fixed_svc, total_reqs).await;
 
     // 1.b. Managed Load Shed Fixed Window Stress
     let fixed = Arc::new(FixedWindow::new(capacity, period));
-    let fixed_svc = ManagedLatencyLayer::new(fixed, timeout).layer(service_fn(mock_db_call));
+    let fixed_svc = make_latency_svc(fixed, timeout, service_fn(mock_db_call));
     run_load_test("Managed Latency Fixed Window", fixed_svc, total_reqs).await;
 
     // 1.c. Raw Fixed Window Stress
@@ -177,12 +211,12 @@ async fn main() -> Result<(), BoxError> {
 
     // 2.a. Managed Retry Sliding Window Stress
     let sliding = Arc::new(SlidingWindow::new(capacity, period));
-    let sliding_svc = ManagedThroughputLayer::new(sliding, timeout).layer(service_fn(mock_db_call));
+    let sliding_svc = make_timeout_svc(sliding, timeout, service_fn(mock_db_call));
     run_load_test("Managed Throughput Sliding Window", sliding_svc, total_reqs).await;
 
     // 2.b. Managed Load Shed Sliding Window Stress
     let sliding = Arc::new(SlidingWindow::new(capacity, period));
-    let sliding_svc = ManagedLatencyLayer::new(sliding, timeout).layer(service_fn(mock_db_call));
+    let sliding_svc = make_latency_svc(sliding, timeout, service_fn(mock_db_call));
     run_load_test("Managed Latency Sliding Window", sliding_svc, total_reqs).await;
 
     // 2.c. Raw Sliding Window Stress
@@ -192,12 +226,12 @@ async fn main() -> Result<(), BoxError> {
 
     // 3.a. Managed Retry Token Bucket Stress
     let bucket = Arc::new(TokenBucket::new(capacity, increment, period));
-    let bucket_svc = ManagedThroughputLayer::new(bucket, timeout).layer(service_fn(mock_db_call));
+    let bucket_svc = make_timeout_svc(bucket, timeout, service_fn(mock_db_call));
     run_load_test("Managed Throughput Token Bucket", bucket_svc, total_reqs).await;
 
     // 3.b. Managed Load Shed Token Bucket Stress
     let bucket = Arc::new(TokenBucket::new(capacity, increment, period));
-    let bucket_svc = ManagedLatencyLayer::new(bucket, timeout).layer(service_fn(mock_db_call));
+    let bucket_svc = make_latency_svc(bucket, timeout, service_fn(mock_db_call));
     run_load_test("Managed Latency Token Bucket", bucket_svc, total_reqs).await;
 
     // 3.c. Raw Token Bucket Stress
@@ -207,12 +241,12 @@ async fn main() -> Result<(), BoxError> {
 
     // 4.a. Managed Retry Gcra Stress
     let gcra = Arc::new(Gcra::new(capacity, period));
-    let gcra_svc = ManagedThroughputLayer::new(gcra, timeout).layer(service_fn(mock_db_call));
+    let gcra_svc = make_timeout_svc(gcra, timeout, service_fn(mock_db_call));
     run_load_test("Managed Throughput Gcra", gcra_svc, total_reqs).await;
 
     // 4.b. Managed Load Shed Gcra Stress
     let gcra = Arc::new(Gcra::new(capacity, period));
-    let gcra_svc = ManagedLatencyLayer::new(gcra, timeout).layer(service_fn(mock_db_call));
+    let gcra_svc = make_latency_svc(gcra, timeout, service_fn(mock_db_call));
     run_load_test("Managed Latency Gcra", gcra_svc, total_reqs).await;
 
     // 4.c. Raw Gcra Stress

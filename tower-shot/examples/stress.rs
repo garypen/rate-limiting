@@ -1,14 +1,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
-use tower::Layer;
 use tower::Service;
 use tower::ServiceExt;
 
 use shot_limit::TokenBucket;
-use tower_shot::ManagedLatencyLayer;
-use tower_shot::ManagedThroughputLayer;
 use tower_shot::ShotError;
+use tower_shot::make_latency_svc;
+use tower_shot::make_timeout_svc;
 
 #[tokio::main]
 async fn main() {
@@ -19,7 +18,7 @@ async fn main() {
     let bucket = Arc::new(TokenBucket::new(limit, refill_amount, interval));
 
     // 2. Setup budget
-    let max_wait = Duration::from_millis(500);
+    let total_timeout = Duration::from_millis(500);
 
     // 3. Define a "Work" service
     let service = tower::service_fn(|i: usize| async move {
@@ -30,19 +29,20 @@ async fn main() {
 
     println!("🚀 Starting Managed Layers Stress Test...");
     println!("Strategy: TokenBucket (Cap: 10, Refill: 1/100ms)");
-    println!("Budget: 500ms wait\n");
+    println!("Budget: 500ms total timeout\n");
 
-    println!("---\n--- Testing ManagedThroughputLayer (Maximizes throughput) ---");
-    run_stress(ManagedThroughputLayer::new(bucket.clone(), max_wait).layer(service.clone()))
-        .await;
+    println!("---\n--- Testing Managed Throughput (Timeout Service) ---");
+    run_stress(make_timeout_svc(bucket.clone(), total_timeout, service.clone())).await;
 
-    println!("\n--- Testing ManagedLatencyLayer (Prioritizes latency) ---");
-    run_stress(ManagedLatencyLayer::new(bucket, max_wait).layer(service)).await;
+    println!("\n--- Testing Managed Latency (Latency Service) ---");
+    run_stress(make_latency_svc(bucket, total_timeout, service)).await;
 
     println!("\n🏁 Stress test complete.");
 }
 
-async fn run_stress<S>(svc: S)
+async fn run_stress<S>(
+    svc: S,
+)
 where
     S: Service<usize, Response = String, Error = tower::BoxError> + Clone + Send + 'static,
     S::Future: Send,

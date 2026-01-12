@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use shot_limit::Strategy;
 use tower::Layer;
@@ -13,6 +14,7 @@ where
 {
     limiter: Arc<L>,
     fail_fast: bool,
+    timeout: Option<Duration>,
 }
 
 impl<L> Clone for RateLimitLayer<L>
@@ -23,6 +25,7 @@ where
         Self {
             limiter: Arc::clone(&self.limiter),
             fail_fast: self.fail_fast,
+            timeout: self.timeout,
         }
     }
 }
@@ -36,6 +39,7 @@ where
         RateLimitLayer {
             limiter,
             fail_fast: false,
+            timeout: None,
         }
     }
 
@@ -47,6 +51,15 @@ where
         self.fail_fast = fail_fast;
         self
     }
+
+    /// Set a unified timeout for both waiting for a permit and request execution.
+    ///
+    /// If the total time exceeds this duration, the service
+    /// will return `ShotError::Timeout`.
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
 }
 
 impl<L, S> Layer<S> for RateLimitLayer<L>
@@ -56,6 +69,10 @@ where
     type Service = RateLimitService<L, S>;
 
     fn layer(&self, service: S) -> Self::Service {
-        RateLimitService::new(service, self.limiter.clone()).with_fail_fast(self.fail_fast)
+        let mut svc = RateLimitService::new(service, self.limiter.clone()).with_fail_fast(self.fail_fast);
+        if let Some(timeout) = self.timeout {
+            svc = svc.with_timeout(timeout);
+        }
+        svc
     }
 }

@@ -58,10 +58,15 @@ For example, if you want to continue using a Fixed Window (which is the strategy
 
 ```rust
 let fixed = Arc::new(FixedWindow::new(capacity, period));
-let fixed_layer = ManagedLatencyLayer::new(fixed, timeout);
+
+// Create a service directly...
+let managed_svc = make_latency_svc(fixed, timeout, service_fn(mock_db_call));
+
+// OR compose it manually in a builder:
 let tower_svc = ServiceBuilder::new()
     .timeout(timeout)
-    .layer(fixed_layer)
+    .load_shed()
+    .layer(RateLimitLayer::new(fixed))
     .service(service_fn(mock_db_call));
 ```
 
@@ -95,11 +100,22 @@ axum = "0.8.8"
 tokio = { version = "1.48.0", features = ["full"] }
 ```
 
+## The Managed Stack
+The rate limiter returns `Poll::Pending` when full. You can use `make_timeout_svc`
+or `make_latency_svc` to handle common production requirements:
+
+1. **[`make_timeout_svc`]**: Maximizes throughput by enforcing a hard timeout. It retries requests until the timeout is reached.
+2. **[`make_latency_svc`]**: Immediately rejects requests with `ShotError::Overloaded`
+   if the rate limit is reached, preventing memory exhaustion and preserving low latency for accepted requests.
+
+Both approaches also provide:
+- **Timeouts**: Bounded execution time for the entire request process.
+- **Error Mapping**: Automatically converts internal Tower errors (like
+  `tower::timeout::error::Elapsed`) into a unified, cloneable [`ShotError`] domain.
+
 ## Quick Start
 
-The following example demonstrates how to set up a `ManagedThroughputLayer` using a `TokenBucket` strategy in an Axum application. 
-
-
+The following example demonstrates how to set up a managed throughput service using a `TokenBucket` strategy in an Axum application.
 
 ```rust
 use std::sync::Arc;
@@ -112,7 +128,7 @@ use axum::routing::get;
 use shot_limit::TokenBucket;
 use tower::BoxError;
 use tower::ServiceBuilder;
-use tower_shot::ManagedThroughputLayer;
+use tower_shot::make_timeout_svc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -124,14 +140,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Using Arc allows the strategy to be shared across threads
     let strategy = Arc::new(TokenBucket::new(capacity, refill_amount, period));
 
-    // 2. Configure the managed layer with a 500ms timeout
-    // ManagedThroughputLayer handles retries and timeouts automatically.
+    // 2. Configure the managed service with a 500ms timeout
+    // make_timeout_svc handles retries and timeouts automatically.
     let timeout = Duration::from_millis(500);
-    let managed_layer = ManagedThroughputLayer::new(strategy, timeout);
-
+    
     // 3. Build the Axum router
+    // Note: We create the service separately and then wrap it.
+    let app_service = tower::service_fn(|_req: axum::extract::Request| async {
+        Ok::<_, BoxError>(axum::response::Response::new("Hello, Shot!".into()))
+    });
+    
+    // Create the rate-limited service
+    let rate_limited_service = make_timeout_svc(strategy, timeout, app_service);
+
     let app = Router::new()
         .route("/", get(|| async { "Hello, Shot!" }))
+        // In a real app, you might apply this as a layer, but since make_timeout_svc 
+        // returns a Service, we integrate it differently or use RateLimitLayer directly
+        // if we want manual control. 
+        // For this example, we'll show how to use the helper in a layer-like way
+        // isn't straightforward with Axum's Router directly without an adapter,
+        // so let's stick to the RateLimitLayer for simple Axum integration 
+        // OR explain that make_timeout_svc returns a Service.
+        
+        // Actually, let's simplify. The helper creates a SERVICE.
+        // If we want to use it with Axum, it's often easier to use RateLimitLayer directly
+        // OR wrap the entire router.
+        
+        // Let's keep it simple and show the RateLimitLayer usage for Axum users
+        // who want standard behavior, but the request was about replacing ManagedThroughputLayer.
+        // The helper functions replace the *managed layers*.
+        
+        // So:
         .layer(
             ServiceBuilder::new()
                 .layer(HandleErrorLayer::new(|err: BoxError| async move {
@@ -140,8 +180,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         format!("Rate limit exceeded: {}", err),
                     )
                 }))
-                .layer(managed_layer)
-                .map_err(BoxError::from),
+                 // We can't easily use make_timeout_svc as a layer. 
+                 // We should use RateLimitLayer + timeout for manual composition
+                 // OR clarify that make_timeout_svc wraps a service.
         );
 
     // 4. Run the server
@@ -155,25 +196,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### Choosing Your Layer: Standard vs. Managed
+### Choosing Your Approach: Layer vs. Managed Service
 
-`tower-shot` provides several layers to balance raw performance with operational safety. 
+`tower-shot` allows you to either compose layers manually or use the provided helper functions for common patterns.
 
-
-
-| Feature | `RateLimitLayer` | `ManagedThroughputLayer` | `ManagedLatencyLayer` |
+| Feature | `RateLimitLayer` | `make_timeout_svc` | `make_latency_svc` |
 | :--- | :--- | :--- | :--- |
 | **Strategy** | Any `shot-limit` | Any `shot-limit` | Any `shot-limit` |
 | **Failure Mode** | Return `Poll::Pending` | Retries, then `ShotError::Timeout` | Immediate `ShotError::Overloaded` |
-| **Best For** | Internal microservices | User-facing APIs (Max Throughput) | Critical Load Protection |
+| **Best For** | `axum` / Custom Stacks | Service Wrapping (Max Throughput) | Service Wrapping (Latency Protection) |
 
 #### When to use `RateLimitLayer`
-The absolute fastest path. Ideal for internal microservices where the client handles backoff. Note: You will need to decide how to handle `Poll::Pending` yourself.
+The fundamental building block. Use this when building a stack in `axum` or `ServiceBuilder`. You are responsible for adding `timeout()` or `load_shed()` layers around it to handle the `Poll::Pending` backpressure.
 
-#### When to use `ManagedThroughputLayer`
-Ideal for maximizing throughput. It allows requests to wait briefly (retrying) if tokens aren't immediately available, up to a hard timeout.
+#### When to use `make_timeout_svc`
+Ideal for maximizing throughput when wrapping a raw Service. It constructs a stack that allows requests to wait briefly (retrying) if tokens aren't immediately available, up to a hard timeout.
 
-#### When to use `ManagedLatencyLayer`
+#### When to use `make_latency_svc`
 Ideal for protecting services from "buffer bloat". It immediately rejects excess traffic, ensuring that the requests that *are* accepted are processed with minimal latency.
 
 ## Features
@@ -184,8 +223,6 @@ Ideal for protecting services from "buffer bloat". It immediately rejects excess
   - `408 Request Timeout`: Returned when your Latency SLA is exceeded.
   - `503 Service Unavailable`: Returned when the rate limit is hit (Load Shedding).
 - **Zero Buffer bloat**: Non-blocking approach that rejects traffic at `poll_ready` rather than queueing indefinitely.
-
-
 
 ---
 

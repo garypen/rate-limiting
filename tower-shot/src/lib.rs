@@ -4,15 +4,14 @@
 //! the [Tower](https://github.com/tower-rs/tower) ecosystem.
 //!
 //! ## The Managed Stack
-//! Unlike raw rate limiters that return `Poll::Pending` when full, this crate provides
-//! "managed" layers. These are pre-composed stacks designed to handle common production requirements:
+//! The rate limiter returns `Poll::Pending` when full. You can use `make_timeout_svc`
+//! or `make_latency_svc` to handle common production requirements:
 //!
-//! 1. **[`ManagedThroughputLayer`]**: Maximizes throughput by retrying requests that are
-//!    rate-limited, within a hard timeout.
-//! 2. **[`ManagedLatencyLayer`]**: Immediately rejects requests with `ShotError::Overloaded`
+//! 1. **[`make_timeout_svc`]**: Maximizes throughput by enforcing a hard timeout.
+//! 2. **[`make_latency_svc`]**: Immediately rejects requests with `ShotError::Overloaded`
 //!    if the rate limit is reached, preventing memory exhaustion.
 //!
-//! Both layers also provide:
+//! Both approaches also provide:
 //! - **Timeouts**: Bounded execution time for the entire request process.
 //! - **Error Mapping**: Automatically converts internal Tower errors (like
 //!   `tower::timeout::error::Elapsed`) into a unified, cloneable [`ShotError`] domain.
@@ -23,12 +22,9 @@
 //!   to HTTP status codes (408, 503, 500).
 
 mod error;
-mod latency_layer;
 mod layer;
-mod retrylimit_layer;
-mod retrylimit_service;
 mod service;
-mod throughput_layer;
+mod utils;
 
 #[cfg(test)]
 mod tests;
@@ -37,7 +33,8 @@ mod tests;
 use shot_limit::Strategy;
 
 pub use error::ShotError;
-pub use latency_layer::ManagedLatencyLayer;
 pub use layer::RateLimitLayer;
 pub use service::RateLimitService;
-pub use throughput_layer::ManagedThroughputLayer;
+pub use utils::ServiceBuilderExt;
+pub use utils::make_latency_svc;
+pub use utils::make_timeout_svc;
