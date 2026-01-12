@@ -27,11 +27,12 @@ The native `tower` rate limiter is not `Clone` and usually requires the use of `
 
 We subjected the system to a massive burst of **50,000 concurrent requests** against a **10,000 req/s** limit.
 
-### 1. Raw Rate Limit (The "Buffer" Problem)
-*Using `RateLimitLayer` with a standard `Buffer`.*
-*   **Result:** The system processes requests at a high rate, but the **queue builds up**.
-*   **Latency:** The P99 time to acquire a permit balloons to **~4.0 seconds**.
-*   **Risk:** Clients hang for seconds; memory usage spikes.
+### 1. Raw Rate Limit (Direct Backpressure)
+*Using `RateLimitLayer` directly (no Buffer).*
+Unlike native Tower, `tower-shot` services are cloneable and share state without a `Buffer`.
+*   **Result:** The system enforces the limit by returning `Poll::Pending`. The runtime handles the "queue" of waiting tasks.
+*   **Latency:** The P99 time to acquire a permit is **~4.0 seconds**.
+*   **Risk:** Unbounded waiting; clients hang for seconds.
 
 ### 2. Managed Latency (The "Fail Fast" Solution)
 *Using `make_latency_svc`.*
@@ -45,7 +46,13 @@ We subjected the system to a massive burst of **50,000 concurrent requests** aga
 *   **Latency:** The P99 time is bounded by the timeout (e.g., 3.0s).
 *   **Benefit:** Maximizes successful requests while strictly enforcing a maximum wait time.
 
-| Metric | Raw (Buffered) | Managed Throughput | Managed Latency |
+### 4. Standard Tower Rate Limit (Buffered)
+*Using `tower::limit::RateLimit` wrapped in `tower::buffer::Buffer`.*
+Native Tower rate limiters are not shareable by default, requiring a `Buffer` (actor pattern) to enforce a global limit across tasks.
+*   **Result:** Throughput and latency are comparable to the Raw strategy, but with the additional overhead of the Buffer actor.
+*   **Latency:** The P99 time to acquire a permit is **~3.0 seconds**.
+
+| Metric | Raw (Direct) | Managed Throughput | Managed Latency |
 | :--- | :--- | :--- | :--- |
 | **Success Rate** | ~6,260 req/s | ~6,035 req/s | ~2,500 req/s |
 | **P50 Ready Time** | ~2.0 s | ~1.0 s | **125 ns** |
