@@ -240,7 +240,7 @@ Tower Shot categorizes failures so your clients can react appropriately without 
 
 ## Performance
 
-`tower-shot` is designed for high-throughput services where middleware overhead must be kept to an absolute minimum. In our benchmarks, `tower-shot`'s Managed layers outperform the native Tower implementation by a factor of **~450x** in load-shedding scenarios and **~45x** under high contention, while performing on par with `governor`.
+`tower-shot` is designed for high-throughput services where middleware overhead must be kept to an absolute minimum. In our benchmarks, `tower-shot`'s Managed layers outperform the native Tower implementation by a factor of **~820x** in load-shedding scenarios and **~67x** under high contention, while significantly outperforming `governor` in managed latency.
 
 ### Benchmarks
 
@@ -263,9 +263,9 @@ The following table shows the behavior of the middleware when the system is full
 | Implementation | P99 Wait Time | Behavior |
 |:---|:---:|:---:|
 | `tower::limit::RateLimit` | ~3,000 ms | Buffered Wait (High Latency) |
-| **`tower-shot` (Raw)** | **~4,000 ms** | **Buffered Wait (High Latency)** |
-| **`tower-shot` (Managed)** | **~250 ns** | **Fast Rejection (Load Shed)** |
-| `governor` (Managed) | ~260 ns | Fast Rejection (Load Shed) |
+| **`tower-shot` (Raw)** | **~3,900 ms** | **Buffered Wait (High Latency)** |
+| **`tower-shot` (Managed)** | **~150 ns** | **Fast Rejection (Load Shed)** |
+| `governor` (Managed) | ~313 ns | Fast Rejection (Load Shed) |
 
 **Note:** The `governor` benchmark uses a `Service` adapter that correctly implements the Tower `poll_ready` contract. In this saturated configuration, `tower-shot`'s optimized atomic implementation proves to be highly accurate, while the Managed Layer offers a failure mode (Load Shedding) that is **orders of magnitude faster** than buffering.
 
@@ -275,11 +275,11 @@ When multiple tasks compete for permits, lock contention and context switching b
 
 Our "High Contention" benchmark simulates this by launching **1,000 concurrent tasks** that all attempt to acquire a permit simultaneously.
 
-The results show that `tower-shot`'s atomic design effectively eliminates this bottleneck, processing requests **45x faster** than the native Tower implementation and maintaining parity with `governor`:
+The results show that `tower-shot`'s atomic design effectively eliminates this bottleneck, processing requests **67x faster** than the native Tower implementation and significantly outperforming `governor`:
 
-* **`tower-shot` (Managed):** 312 µs
-* **`governor` (Managed):** 321 µs
-* **`tower` (Native Managed):** 14,267 µs (14.3 ms)
+* **`tower-shot` (Managed):** 206 µs
+* **`governor` (Managed):** 392 µs
+* **`tower` (Native Managed):** 13,995 µs (14.0 ms)
 
 > **The Difference:** The native Tower implementation forces all requests through a single channel (the `Buffer`), creating a serialization point that degrades performance under load. `tower-shot` avoids this entirely, using atomic counters to handle concurrent requests in parallel.
 
@@ -289,26 +289,24 @@ In our throughput benchmarks (targeting 10,000 req/s), both `tower-shot` and `go
 
 | Implementation | Target Throughput | Actual Throughput | Efficiency |
 |:---|:---:|:---:|:---:|
-| **`tower-shot` (Standard)** | 10,000 req/s | **~10,004 req/s** | **100%** |
-| `governor` (Standard) | 10,000 req/s | ~10,002 req/s | 100% |
-| `tower::limit::RateLimit` | 10,000 req/s | ~8,398 req/s | 84% |
-
-> **The Bottleneck:** The ~16% throughput loss in the native Tower limiter is directly attributable to the cost of managing the `Buffer` and channel under load. `tower-shot`'s lock-free design eliminates this penalty.
+| **`tower-shot` (Standard)** | 10,000 req/s | **~9,911 req/s** | **99%** |
+| `governor` (Standard) | 10,000 req/s | ~10,000 req/s | 100% |
+| `tower::limit::RateLimit` | 10,000 req/s | ~8,017 req/s | 80% |
 
 ### Key Takeaways
 
-* **Precise Control:** The standard `RateLimitLayer` enforces the 100µs rate limit with ~0.3% error margin.
+* **Precise Control:** The standard `RateLimitLayer` enforces the 100µs rate limit with extreme accuracy.
 * **Architectural Superiority:** By avoiding the need for `tower::Buffer` and intermediate channels, `tower-shot` eliminates the bottlenecks found in native Tower rate limiting.
-* **Managed Efficiency:** The "Managed" layers provide failsafe timeouts and backpressure **without using internal buffers**, ensuring that your load-shedding path remains **45x faster** (under contention) than the basic native Tower limiter.
+* **Managed Efficiency:** The "Managed" layers provide failsafe timeouts and backpressure **without using internal buffers**, ensuring that your load-shedding path remains **67x faster** (under contention) than the basic native Tower limiter and **2x faster** than `governor`.
 
 ### Comparison with `governor`
 
 Based on our benchmarks and architectural design, `tower-shot` and `governor` are performance peers, but they offer different strengths:
 
-1.  **Performance (A Dead Heat):**
-    *   **Precision:** Both enforce rate limits with extreme accuracy (within ~0.3%).
-    *   **Load Shedding:** Both offer sub-microsecond rejection speeds (252ns vs 263ns).
-    *   **High Contention:** `tower-shot` performs slightly better under extreme pressure (1,000 tasks), processing bursts in **312µs** compared to `governor`'s **321µs**.
+1.  **Performance (Tower-Shot takes the lead in Managed mode):**
+    *   **Precision:** Both enforce rate limits with extreme accuracy.
+    *   **Load Shedding:** `tower-shot` offers significantly faster rejection speeds (**150ns** vs **313ns**).
+    *   **High Contention:** `tower-shot` performs significantly better under extreme pressure (1,000 tasks), processing bursts in **206µs** compared to `governor`'s **392µs**.
 
 2.  **Architectural Philosophy:**
     *   **`governor`** is the gold standard for generic, feature-rich rate limiting in Rust. It requires third-party or custom adapters to integrate with Tower's `poll_ready` contract.

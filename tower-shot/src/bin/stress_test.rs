@@ -99,7 +99,7 @@ where
                 if let Some(shot_err) = e.downcast_ref::<ShotError>() {
                     match shot_err {
                         ShotError::Timeout => rejections.timeouts += 1,
-                        // ShotError::Overloaded => rejections.sheds += 1,
+                        ShotError::Overloaded => rejections.sheds += 1,
                         ShotError::RateLimited { .. } => rejections.sheds += 1,
                         ShotError::Inner(_) => rejections.inner += 1,
                     }
@@ -152,39 +152,6 @@ where
     }
     println!();
 }
-
-/*
-async fn make_timeout_svc<S>(
-    strategy: Arc<S>,
-    timeout: Duration,
-) -> BoxCloneSyncService<u64, &'static str, BoxError>
-where
-    S: Strategy + Send + Sync + 'static,
-{
-    BoxCloneSyncService::new(
-        ServiceBuilder::new()
-            .timeout(timeout)
-            .layer(RateLimitLayer::new(strategy))
-            .service(service_fn(mock_db_call)),
-    )
-}
-
-async fn make_latency_svc<S>(
-    strategy: Arc<S>,
-    timeout: Duration,
-) -> BoxCloneSyncService<u64, &'static str, BoxError>
-where
-    S: Strategy + Send + Sync + 'static,
-{
-    BoxCloneSyncService::new(
-        ServiceBuilder::new()
-            .timeout(timeout)
-            .load_shed()
-            .layer(RateLimitLayer::new(strategy))
-            .service(service_fn(mock_db_call)),
-    )
-}
-*/
 
 #[tokio::main]
 async fn main() -> Result<(), BoxError> {

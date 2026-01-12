@@ -32,7 +32,12 @@ async fn main() {
     println!("Budget: 500ms total timeout\n");
 
     println!("---\n--- Testing Managed Throughput (Timeout Service) ---");
-    run_stress(make_timeout_svc(bucket.clone(), total_timeout, service.clone())).await;
+    run_stress(make_timeout_svc(
+        bucket.clone(),
+        total_timeout,
+        service.clone(),
+    ))
+    .await;
 
     println!("\n--- Testing Managed Latency (Latency Service) ---");
     run_stress(make_latency_svc(bucket, total_timeout, service)).await;
@@ -40,9 +45,7 @@ async fn main() {
     println!("\n🏁 Stress test complete.");
 }
 
-async fn run_stress<S>(
-    svc: S,
-)
+async fn run_stress<S>(svc: S)
 where
     S: Service<usize, Response = String, Error = tower::BoxError> + Clone + Send + 'static,
     S::Future: Send,

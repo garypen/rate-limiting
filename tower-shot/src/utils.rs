@@ -5,11 +5,15 @@ use tower::BoxError;
 use tower::Service;
 use tower::ServiceBuilder;
 use tower::layer::util::Stack;
+use tower::load_shed::LoadShedLayer;
+use tower::load_shed::error::Overloaded;
 use tower::util::BoxCloneSyncService;
+use tower::util::MapErrLayer;
 
 use shot_limit::Strategy;
 
 use crate::RateLimitLayer;
+use crate::ShotError;
 
 /// Limit service time with a single unified timeout
 pub fn make_timeout_svc<S, V, Req, Resp>(
@@ -25,21 +29,12 @@ where
 {
     BoxCloneSyncService::new(
         ServiceBuilder::new()
-            /*
-                .map_err(|e: BoxError| {
-                    if e.is::<Overloaded>() {
-                        Box::new(ShotError::Overloaded)
-                    } else {
-                        e
-                    }
-                })
-            */
             .layer(RateLimitLayer::new(strategy).with_timeout(timeout))
             .service(svc),
     )
 }
 
-/// Limit service time and Shed Load with a single unified timeout
+/// Limit service time with a single unified timeout and shed load
 pub fn make_latency_svc<S, V, Req, Resp>(
     strategy: Arc<S>,
     timeout: Duration,
@@ -53,20 +48,8 @@ where
 {
     BoxCloneSyncService::new(
         ServiceBuilder::new()
-            /*
-                .map_err(|e: BoxError| {
-                    if e.is::<Elapsed>() {
-                        Box::new(ShotError::Timeout)
-                    } else if e.is::<Overloaded>() {
-                        panic!("I don't think this can happen");
-                        // Box::new(ShotError::Overloaded)
-                    } else {
-                        e
-                    }
-                })
-            */
-            // .timeout(timeout)
-            // .load_shed()
+            .map_err(map_overloaded)
+            .load_shed()
             .layer(
                 RateLimitLayer::new(strategy)
                     .with_fail_fast(true)
@@ -74,6 +57,14 @@ where
             )
             .service(svc),
     )
+}
+
+fn map_overloaded(e: BoxError) -> BoxError {
+    if e.is::<Overloaded>() {
+        Box::new(ShotError::Overloaded)
+    } else {
+        e
+    }
 }
 
 /// Service Builder Extension with additional useful functions for tower::ServiceBuilder.
@@ -85,11 +76,17 @@ pub trait ServiceBuilderExt<L> {
         timeout: Duration,
     ) -> ServiceBuilder<Stack<RateLimitLayer<dyn Strategy + Send + Sync + 'static>, L>>;
 
-    /// Add a low latency layer
+    /// Add a load shedding low latency layer
     fn latency_rate_limit(
         self,
         limiter: Arc<dyn Strategy + Send + Sync + 'static>,
-    ) -> ServiceBuilder<Stack<RateLimitLayer<dyn Strategy + Send + Sync + 'static>, L>>;
+        timeout: Duration,
+    ) -> ServiceBuilder<
+        Stack<
+            RateLimitLayer<dyn Strategy + Send + Sync>,
+            Stack<LoadShedLayer, Stack<MapErrLayer<fn(BoxError) -> BoxError>, L>>,
+        >,
+    >;
 }
 
 impl<L> ServiceBuilderExt<L> for ServiceBuilder<L> {
@@ -104,7 +101,19 @@ impl<L> ServiceBuilderExt<L> for ServiceBuilder<L> {
     fn latency_rate_limit(
         self,
         limiter: Arc<dyn Strategy + Send + Sync + 'static>,
-    ) -> ServiceBuilder<Stack<RateLimitLayer<dyn Strategy + Send + Sync + 'static>, L>> {
-        self.layer(RateLimitLayer::new(limiter).with_fail_fast(true))
+        timeout: Duration,
+    ) -> ServiceBuilder<
+        Stack<
+            RateLimitLayer<dyn Strategy + Send + Sync>,
+            Stack<LoadShedLayer, Stack<MapErrLayer<fn(BoxError) -> BoxError>, L>>,
+        >,
+    > {
+        self.map_err(map_overloaded as fn(BoxError) -> BoxError)
+            .load_shed()
+            .layer(
+                RateLimitLayer::new(limiter)
+                    .with_fail_fast(true)
+                    .with_timeout(timeout),
+            )
     }
 }

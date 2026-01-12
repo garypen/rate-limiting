@@ -11,8 +11,8 @@ pub enum ShotError {
     ///
     /// This is triggered by the Load Shedding layer to protect system resources.
     /// When the `axum` feature is enabled, this converts to `503 Service Unavailable`.
-    // #[error("Service is overloaded; request shed")]
-    // Overloaded,
+    #[error("Service is overloaded; request shed")]
+    Overloaded,
 
     /// The request was rejected due to rate limiting.
     ///
