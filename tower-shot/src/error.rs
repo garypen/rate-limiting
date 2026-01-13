@@ -39,7 +39,7 @@ impl axum::response::IntoResponse for ShotError {
         use axum::http::StatusCode;
 
         let (status, msg, headers) = match self {
-            // Self::Overloaded => (StatusCode::SERVICE_UNAVAILABLE, self.to_string(), None),
+            Self::Overloaded => (StatusCode::SERVICE_UNAVAILABLE, self.to_string(), None),
             Self::Timeout => (StatusCode::REQUEST_TIMEOUT, self.to_string(), None),
             Self::RateLimited { retry_after } => {
                 let secs = retry_after.as_secs().max(1);

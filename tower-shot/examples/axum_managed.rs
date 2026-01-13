@@ -154,8 +154,7 @@ async fn main() -> Result<(), BoxError> {
         LimiterType::Latency => app.layer(
             ServiceBuilder::new()
                 .layer(error_layer)
-                // .layer(RateLimitLayer::new(strategy).with_fail_fast(true))
-                .latency_rate_limit(strategy)
+                .latency_rate_limit(strategy, args.timeout)
                 .map_err(BoxError::from),
         ),
     };
