@@ -329,52 +329,49 @@ fn bench_all_scenarios(c: &mut Criterion) {
     let scenarios: Vec<(&str, BenchService)> = vec![
         (
             "shot_standard_fixed",
-            BoxCloneSyncService::new(
-                ServiceBuilder::new()
-                    .layer(RateLimitLayer::new(fixed.clone()))
-                    .service(service_fn(noop_handler)),
-            ),
+            ServiceBuilder::new()
+                .boxed_clone_sync()
+                .layer(RateLimitLayer::new(fixed.clone()))
+                .service(service_fn(noop_handler)),
         ),
         (
             "shot_standard_sliding",
-            BoxCloneSyncService::new(
-                ServiceBuilder::new()
-                    .layer(RateLimitLayer::new(sliding.clone()))
-                    .service(service_fn(noop_handler)),
-            ),
+            ServiceBuilder::new()
+                .boxed_clone_sync()
+                .layer(RateLimitLayer::new(sliding.clone()))
+                .service(service_fn(noop_handler)),
         ),
         (
             "shot_standard_bucket",
-            BoxCloneSyncService::new(
-                ServiceBuilder::new()
-                    .layer(RateLimitLayer::new(bucket.clone()))
-                    .service(service_fn(noop_handler)),
-            ),
+            ServiceBuilder::new()
+                .boxed_clone_sync()
+                .layer(RateLimitLayer::new(bucket.clone()))
+                .service(service_fn(noop_handler)),
         ),
         (
             "shot_standard_gcra",
-            BoxCloneSyncService::new(
-                ServiceBuilder::new()
-                    .layer(RateLimitLayer::new(gcra.clone()))
-                    .service(service_fn(noop_handler)),
-            ),
+            ServiceBuilder::new()
+                .boxed_clone_sync()
+                .layer(RateLimitLayer::new(gcra.clone()))
+                .service(service_fn(noop_handler)),
         ),
         ("standard_governor", {
-            BoxCloneSyncService::new(GovernorService {
-                inner: service_fn(noop_handler),
-                limiter: governor.clone(),
-                sleep: None,
-                clock: DefaultClock::default(),
-            })
+            ServiceBuilder::new()
+                .boxed_clone_sync()
+                .service(GovernorService {
+                    inner: service_fn(noop_handler),
+                    limiter: governor.clone(),
+                    sleep: None,
+                    clock: DefaultClock::default(),
+                })
         }),
         (
             "standard_tower_native",
-            BoxCloneSyncService::new(
-                ServiceBuilder::new()
-                    .buffer(capacity_u)
-                    .layer(TowerNativeRateLimit::new(capacity_u as u64, period))
-                    .service(service_fn(noop_handler)),
-            ),
+            ServiceBuilder::new()
+                .boxed_clone_sync()
+                .buffer(capacity_u)
+                .layer(TowerNativeRateLimit::new(capacity_u as u64, period))
+                .service(service_fn(noop_handler)),
         ),
         (
             "shot_managed_throughput_fixed",
@@ -409,25 +406,26 @@ fn bench_all_scenarios(c: &mut Criterion) {
             make_latency_svc(gcra.clone(), timeout, service_fn(noop_handler)),
         ),
         ("managed_governor", {
-            BoxCloneSyncService::new(ServiceBuilder::new().timeout(timeout).load_shed().service(
-                GovernorService {
+            ServiceBuilder::new()
+                .boxed_clone_sync()
+                .timeout(timeout)
+                .load_shed()
+                .service(GovernorService {
                     inner: service_fn(noop_handler),
                     limiter: governor,
                     sleep: None,
                     clock: DefaultClock::default(),
-                },
-            ))
+                })
         }),
         (
             "managed_tower_native",
-            BoxCloneSyncService::new(
-                ServiceBuilder::new()
-                    .timeout(timeout)
-                    .load_shed()
-                    .buffer(capacity_u)
-                    .layer(TowerNativeRateLimit::new(capacity_u as u64, period))
-                    .service(service_fn(noop_handler)),
-            ),
+            ServiceBuilder::new()
+                .boxed_clone_sync()
+                .timeout(timeout)
+                .load_shed()
+                .buffer(capacity_u)
+                .layer(TowerNativeRateLimit::new(capacity_u as u64, period))
+                .service(service_fn(noop_handler)),
         ),
     ];
 
