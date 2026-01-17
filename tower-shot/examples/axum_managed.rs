@@ -55,6 +55,9 @@ use shot_limit::Strategy;
 use shot_limit::TokenBucket;
 use tower::BoxError;
 use tower::ServiceBuilder;
+use tower_governor::GovernorLayer;
+use tower_governor::governor::GovernorConfigBuilder;
+use tower_governor::key_extractor::GlobalKeyExtractor;
 use tower_shot::RateLimitLayer;
 use tower_shot::ServiceBuilderExt;
 use tower_shot::ShotError;
@@ -72,6 +75,7 @@ enum StrategyType {
     Gcra,
     Sliding,
     Bucket,
+    Governor,
 }
 
 #[derive(Parser, Debug)]
@@ -114,11 +118,12 @@ async fn main() -> Result<(), BoxError> {
     let increment = args.increment.try_into()?;
 
     // Ensure the Arc is created as the trait object type immediately
-    let strategy: Arc<dyn Strategy + Send + Sync> = match args.strategy {
-        StrategyType::Fixed => Arc::new(FixedWindow::new(capacity, args.period)),
-        StrategyType::Gcra => Arc::new(Gcra::new(capacity, args.period)),
-        StrategyType::Sliding => Arc::new(SlidingWindow::new(capacity, args.period)),
-        StrategyType::Bucket => Arc::new(TokenBucket::new(capacity, increment, args.period)),
+    let strategy: Option<Arc<dyn Strategy + Send + Sync>> = match args.strategy {
+        StrategyType::Fixed => Some(Arc::new(FixedWindow::new(capacity, args.period))),
+        StrategyType::Gcra => Some(Arc::new(Gcra::new(capacity, args.period))),
+        StrategyType::Sliding => Some(Arc::new(SlidingWindow::new(capacity, args.period))),
+        StrategyType::Bucket => Some(Arc::new(TokenBucket::new(capacity, increment, args.period))),
+        StrategyType::Governor => None,
     };
 
     println!(
@@ -135,28 +140,69 @@ async fn main() -> Result<(), BoxError> {
 
     let error_layer = HandleErrorLayer::new(handle_shot_error);
 
-    app = match args.limiter {
-        LimiterType::Standard => {
-            let layer = RateLimitLayer::new(strategy);
-            app.layer(
+    app = match strategy {
+        Some(strategy) => match args.limiter {
+            // Note: It doesn't matter which type of limiter you choose for Governor,
+            // you always get the "low latency" behaviour. That may because I'm not
+            // configuring Governor correctly, but I suspect it's becase Governor
+            // assumes that inner services are always ready, so "fast fail" is the
+            // only behaviour.
+            LimiterType::Standard => {
+                let layer = RateLimitLayer::new(strategy);
+                app.layer(
+                    ServiceBuilder::new()
+                        .layer(error_layer)
+                        .layer(layer)
+                        .map_err(BoxError::from),
+                )
+            }
+            LimiterType::Throughput => app.layer(
                 ServiceBuilder::new()
                     .layer(error_layer)
-                    .layer(layer)
+                    .throughput_rate_limit(strategy, args.timeout)
                     .map_err(BoxError::from),
-            )
+            ),
+            LimiterType::Latency => app.layer(
+                ServiceBuilder::new()
+                    .layer(error_layer)
+                    .latency_rate_limit(strategy, args.timeout)
+                    .map_err(BoxError::from),
+            ),
+        },
+        None => {
+            let config = Arc::new(
+                GovernorConfigBuilder::default()
+                    .period(args.period)
+                    .burst_size(capacity.get() as u32)
+                    .key_extractor(GlobalKeyExtractor)
+                    .finish()
+                    .ok_or(BoxError::from("Could not build governor"))?,
+            );
+
+            match args.limiter {
+                LimiterType::Standard => app.layer(
+                    ServiceBuilder::new()
+                        .layer(error_layer)
+                        .layer(GovernorLayer::new(config))
+                        .map_err(BoxError::from),
+                ),
+                LimiterType::Throughput => app.layer(
+                    ServiceBuilder::new()
+                        .layer(error_layer)
+                        .timeout(args.timeout)
+                        .layer(GovernorLayer::new(config))
+                        .map_err(BoxError::from),
+                ),
+                LimiterType::Latency => app.layer(
+                    ServiceBuilder::new()
+                        .layer(error_layer)
+                        .timeout(args.timeout)
+                        .load_shed()
+                        .layer(GovernorLayer::new(config))
+                        .map_err(BoxError::from),
+                ),
+            }
         }
-        LimiterType::Throughput => app.layer(
-            ServiceBuilder::new()
-                .layer(error_layer)
-                .throughput_rate_limit(strategy, args.timeout)
-                .map_err(BoxError::from),
-        ),
-        LimiterType::Latency => app.layer(
-            ServiceBuilder::new()
-                .layer(error_layer)
-                .latency_rate_limit(strategy, args.timeout)
-                .map_err(BoxError::from),
-        ),
     };
 
     let listener = tokio::net::TcpListener::bind(args.addr).await?;
