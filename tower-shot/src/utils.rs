@@ -33,13 +33,12 @@ where
     S: Strategy + Send + Sync + 'static,
     Req: Send + 'static,
     V: Service<Req, Response = Resp, Error = BoxError> + Clone + Send + Sync + 'static,
-    <V as Service<Req>>::Future: Send,
+    <V as Service<Req>>::Future: Send + Sync,
 {
-    BoxCloneSyncService::new(
-        ServiceBuilder::new()
-            .layer(RateLimitLayer::new(strategy).with_timeout(timeout))
-            .service(svc),
-    )
+    ServiceBuilder::new()
+        .boxed_clone_sync()
+        .layer(RateLimitLayer::new(strategy).with_timeout(timeout))
+        .service(svc)
 }
 
 /// Create a "Latency" optimized service.
@@ -59,19 +58,18 @@ where
     S: Strategy + Send + Sync + 'static,
     Req: Send + 'static,
     V: Service<Req, Response = Resp, Error = BoxError> + Clone + Send + Sync + 'static,
-    <V as Service<Req>>::Future: Send,
+    <V as Service<Req>>::Future: Send + Sync,
 {
-    BoxCloneSyncService::new(
-        ServiceBuilder::new()
-            .map_err(map_overloaded)
-            .load_shed()
-            .layer(
-                RateLimitLayer::new(strategy)
-                    .with_fail_fast(true)
-                    .with_timeout(timeout),
-            )
-            .service(svc),
-    )
+    ServiceBuilder::new()
+        .boxed_clone_sync()
+        .map_err(map_overloaded)
+        .load_shed()
+        .layer(
+            RateLimitLayer::new(strategy)
+                .with_fail_fast(true)
+                .with_timeout(timeout),
+        )
+        .service(svc)
 }
 
 fn map_overloaded(e: BoxError) -> BoxError {
