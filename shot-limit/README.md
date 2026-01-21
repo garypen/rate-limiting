@@ -21,8 +21,6 @@ Built for extreme scale on modern hardware. The following benchmarks were record
 
 *Note: Total throughput at 8 threads exceeds **2.3 billion operations per second** for the Fixed Window strategy.*
 
-
-
 ## Usage
 
 Each strategy implements the `Strategy` trait, which provides a `process()` method.

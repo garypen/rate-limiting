@@ -1,15 +1,20 @@
 # Tower Shot 🥃
 
-A high-performance, atomic-backed rate limiting middleware for `tower` and `axum` that solves the "Buffer Bloat" problem.
+A high-performance, atomic-backed rate limiting middleware for `tower` and `axum` that provides choice between throughput or latency.
 
 ## Why Tower Shot?
 
-The native `tower` rate limiter is not `Clone` and usually requires the use of `tower::buffer::Buffer` to make a service stack shareable. This introduces significant challenges:
+There's a gap in the rate limiting marketplace for a rate limiter which optimises throughput within specified timeout constraints.
+
+You can't do this with standard native components, because the tower rate limiter is not `Clone`. This requires the use of `tower::buffer::Buffer` to make a service stack shareable. This introduces significant challenges:
+
 1.  **Buffer Bloat:** Requests sit in the buffer while waiting for a rate-limit permit. This "invisible queue" increases latency and memory usage.
 2.  **Configuration Complexity:** Placing the `Buffer` before or after other layers (like `Timeout`) changes the failure semantics (e.g., does the timeout include the queue time?).
 3.  **Performance overhead:** Under high contention, the channel-based design of `Buffer` becomes a bottleneck.
 
-`tower-shot` solves these issues by providing **atomic, lock-free strategies** and a **Managed Architecture** that eliminates the need for buffers entirely.
+If you decide to use `tower-governor`, this provides an integrated solution, but it's latency focussed and there doesn't appear to be a way to tweak the rate limiting configuration to try and maximise throughput.
+
+`tower-shot` solves these issues by providing **atomic, lock-free strategies** and a choice of implementations that eliminate the need for buffers entirely.
 
 ## Choose Your Mode
 
@@ -17,7 +22,7 @@ The native `tower` rate limiter is not `Clone` and usually requires the use of `
 
 | Mode | Component | Best For... | Behavior |
 | :--- | :--- | :--- | :--- |
-| **Raw** | `RateLimitLayer` | **Standard Compliance** | A drop-in replacement for `tower::limit::RateLimit`. Returns `Poll::Pending` when full. Requires you to handle backpressure (usually via `Buffer`). |
+| **Raw** | `RateLimitLayer` | **Standard Compliance** | A drop-in replacement for `tower::limit::RateLimit`. Returns `Poll::Pending` when full. Requires you to handle backpressure (usually via `LoadShed`). |
 | **Latency** | `make_latency_svc` | **Protecting P99 / SLA** | **Fail Fast**. If the limit is reached, it rejects the request *immediately* (in nanoseconds). No queuing. Keeps accepted requests fast. |
 | **Throughput** | `make_timeout_svc` | **Max Throughput** | **Wait & Retry**. If the limit is reached, it retries until a permit is available or the timeout is reached. Bounds the wait time. |
 
@@ -48,7 +53,6 @@ Unlike native Tower, `tower-shot` services are cloneable and share state without
 
 ### 4. Standard Tower Rate Limit (Buffered)
 *Using `tower::limit::RateLimit` wrapped in `tower::buffer::Buffer`.*
-Native Tower rate limiters are not shareable by default, requiring a `Buffer` (actor pattern) to enforce a global limit across tasks.
 *   **Result:** Throughput and latency are comparable to the Raw strategy, but with the additional overhead of the Buffer actor.
 *   **Latency:** The P99 time to acquire a permit is **~3.0 seconds**.
 
@@ -84,10 +88,8 @@ When the system is overloaded, how fast can we say "No"?
 
 ```toml
 [dependencies]
-# tower-shot = "0.1.0"
-# shot-limit = "0.1.0"
-tower-shot = { version = "0.1.0", git = "https://github.com/garypen/rate-limiting.git", branch = "main" }
-shot-limit = { version = "0.1.0", git = "https://github.com/garypen/rate-limiting.git", branch = "main" }
+tower-shot = "0.1.0"
+shot-limit = "0.1.0"
 tower = "0.5"
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
