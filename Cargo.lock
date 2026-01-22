@@ -1326,7 +1326,7 @@ dependencies = [
 
 [[package]]
 name = "py-shot-limit"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "pyo3",
  "shot-limit",
@@ -1654,7 +1654,7 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
 name = "shot-limit"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "criterion",
  "futures",
@@ -1964,7 +1964,7 @@ checksum = "8df9b6e13f2d32c91b9bd719c00d1958837bc7dec474d94952798cc8e69eeec3"
 
 [[package]]
 name = "tower-shot"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "clap",

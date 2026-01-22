@@ -18,4 +18,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.27.2", features = ["extension-module"] }
-shot-limit = { version = "0.1.0", path = "../shot-limit" }
+shot-limit = { version = "0.1.1", path = "../shot-limit" }
