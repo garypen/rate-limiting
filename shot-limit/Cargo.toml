@@ -22,7 +22,7 @@ quanta = "0.12.6"
 criterion = { version = "0.8", features = ["html_reports"] }
 futures.workspace = true
 governor = "0.10.4"
-more-asserts = "0.3.0"
+more-asserts = "0.3.1"
 tokio.workspace = true
 
 [[bench]]
