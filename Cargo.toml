@@ -19,6 +19,6 @@ edition = "2024"
 
 [workspace.dependencies]
 futures = "0.3.31"
-tokio = { version = "1.48.0", features = [ "full", "test-util" ] }
-tower = { version = "0.5.2", features = ["full"] }
+tokio = { version = "1.49.0", features = [ "full", "test-util" ] }
+tower = { version = "0.5.3", features = ["full"] }
 tower-test = "0.4.0"
