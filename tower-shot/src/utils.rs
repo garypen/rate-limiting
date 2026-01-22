@@ -85,18 +85,18 @@ pub trait ServiceBuilderExt<L> {
     /// Add a high throughput layer (see [`make_timeout_svc`])
     fn throughput_rate_limit(
         self,
-        limiter: Arc<dyn Strategy + Send + Sync + 'static>,
+        limiter: Arc<dyn Strategy>,
         timeout: Duration,
-    ) -> ServiceBuilder<Stack<RateLimitLayer<dyn Strategy + Send + Sync + 'static>, L>>;
+    ) -> ServiceBuilder<Stack<RateLimitLayer<dyn Strategy>, L>>;
 
     /// Add a load shedding low latency layer (see [`make_latency_svc`])
     fn latency_rate_limit(
         self,
-        limiter: Arc<dyn Strategy + Send + Sync + 'static>,
+        limiter: Arc<dyn Strategy>,
         timeout: Duration,
     ) -> ServiceBuilder<
         Stack<
-            RateLimitLayer<dyn Strategy + Send + Sync>,
+            RateLimitLayer<dyn Strategy>,
             Stack<LoadShedLayer, Stack<MapErrLayer<fn(BoxError) -> BoxError>, L>>,
         >,
     >;
@@ -105,19 +105,19 @@ pub trait ServiceBuilderExt<L> {
 impl<L> ServiceBuilderExt<L> for ServiceBuilder<L> {
     fn throughput_rate_limit(
         self,
-        limiter: Arc<dyn Strategy + Send + Sync + 'static>,
+        limiter: Arc<dyn Strategy>,
         timeout: Duration,
-    ) -> ServiceBuilder<Stack<RateLimitLayer<dyn Strategy + Send + Sync + 'static>, L>> {
+    ) -> ServiceBuilder<Stack<RateLimitLayer<dyn Strategy>, L>> {
         self.layer(RateLimitLayer::new(limiter).with_timeout(timeout))
     }
 
     fn latency_rate_limit(
         self,
-        limiter: Arc<dyn Strategy + Send + Sync + 'static>,
+        limiter: Arc<dyn Strategy>,
         timeout: Duration,
     ) -> ServiceBuilder<
         Stack<
-            RateLimitLayer<dyn Strategy + Send + Sync>,
+            RateLimitLayer<dyn Strategy>,
             Stack<LoadShedLayer, Stack<MapErrLayer<fn(BoxError) -> BoxError>, L>>,
         >,
     > {

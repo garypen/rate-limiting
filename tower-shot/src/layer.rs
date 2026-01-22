@@ -32,7 +32,7 @@ where
 
 impl<L> RateLimitLayer<L>
 where
-    L: Strategy + ?Sized + Send + Sync + 'static,
+    L: Strategy + ?Sized,
 {
     /// Create a RateLimitLayer
     pub fn new(limiter: Arc<L>) -> Self {
@@ -69,7 +69,8 @@ where
     type Service = RateLimitService<L, S>;
 
     fn layer(&self, service: S) -> Self::Service {
-        let mut svc = RateLimitService::new(service, self.limiter.clone()).with_fail_fast(self.fail_fast);
+        let mut svc =
+            RateLimitService::new(service, self.limiter.clone()).with_fail_fast(self.fail_fast);
         if let Some(timeout) = self.timeout {
             svc = svc.with_timeout(timeout);
         }
