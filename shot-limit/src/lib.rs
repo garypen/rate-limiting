@@ -56,7 +56,7 @@ pub enum Reason {
 ///
 /// Strategies must be `Send` and `Sync` to allow sharing across thread boundaries
 /// via `Arc`.
-pub trait Strategy: Debug {
+pub trait Strategy: Debug + Send + Sync {
     /// Attempts to process a single request.
     ///
     /// This method is non-blocking and uses atomic operations to update

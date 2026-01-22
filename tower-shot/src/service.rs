@@ -94,7 +94,7 @@ where
 
 impl<L, S, Req> Service<Req> for RateLimitService<L, S>
 where
-    L: Strategy + ?Sized + Send + Sync + 'static,
+    L: Strategy + ?Sized,
     S: Service<Req, Error = BoxError>,
     Req: Send + 'static,
 {

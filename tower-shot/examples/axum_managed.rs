@@ -118,7 +118,7 @@ async fn main() -> Result<(), BoxError> {
     let increment = args.increment.try_into()?;
 
     // Ensure the Arc is created as the trait object type immediately
-    let strategy: Option<Arc<dyn Strategy + Send + Sync>> = match args.strategy {
+    let strategy: Option<Arc<dyn Strategy>> = match args.strategy {
         StrategyType::Fixed => Some(Arc::new(FixedWindow::new(capacity, args.period))),
         StrategyType::Gcra => Some(Arc::new(Gcra::new(capacity, args.period))),
         StrategyType::Sliding => Some(Arc::new(SlidingWindow::new(capacity, args.period))),
