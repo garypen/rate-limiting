@@ -17,5 +17,5 @@ name = "py_shot_limit"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.27.2", features = ["extension-module"] }
+pyo3 = { version = "0.28.0", features = ["extension-module"] }
 shot-limit = { version = "0.1.1", path = "../shot-limit" }
