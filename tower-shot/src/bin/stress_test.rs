@@ -4,7 +4,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 use hdrhistogram::Histogram;
-use rand::Rng;
+use rand::RngExt;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use shot_limit::FixedWindow;
